@@ -1,0 +1,17 @@
+{   
+"Cost": 1,
+"Value": 2,
+"Task": 3,
+"Issue": 4,
+"Job": 6,
+"Compy": 7,
+"Ref": 8,
+"meet": 9,
+"Mng": 10,
+"4PT": 11,
+"Req": 12,
+"UC": 13,
+"UI": 14,
+"Risk": 16,
+"Overloaded": 17
+}
