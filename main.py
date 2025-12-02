@@ -39,26 +39,20 @@ mcp = FastMCP(
     dependencies=["requests"]
 )
 
+# Date and Time
 @mcp.tool()
 def get_date_time(format_type: Optional[str] = "datetime") -> str:
     """
     Get the current date and/or time in Seoul timezone (UTC+9).
+    
+    Use this tool when you need to determine the current date for date-based queries.
+    For example, when a user asks about "this week", "this month", "today", or "now",
+    call this tool first to get the current date, then use it with other Socramine tools.
 
-    IMPORTANT: This function is a pure date/time helper and does NOT provide
-    Socramine project data. When answering user questions that require
-    Socramine data (for example: hours worked, issues, or estimates), an
-    assistant MUST call the appropriate Socramine MCP tool (for example
-    `get_hours_per_week_by_date`, `get_issues_per_week_by_date`,
-    `get_issues_per_month_by_date`, `get_hours_per_month_by_date`) to retrieve
-    the authoritative data before creating a summary.
-
-    If a user asks for Socramine data but only this date/time tool is
-    available, do NOT guess or fabricate numbers. Instead return a concise
-    statement that the required Socramine tool is not available and that the
-    assistant needs to call the correct MCP tool to answer (for example:
-    "I cannot answer that — I need to call `get_hours_per_week_by_date` to
-    retrieve Steven's hours for the week"). Use this tool only to obtain
-    current date/time values when computing ranges or timestamps.
+    IMPORTANT: This is a date/time helper only. After getting the current date, you MUST
+    call the appropriate Socramine data tools (like `get_hours_per_week_by_date`,
+    `get_issues_per_month_by_date`, etc.) to retrieve actual project data. Do NOT
+    fabricate or guess data values.
 
     Parameters:
     - format_type (str, optional): Format of the returned time. Options:
@@ -89,6 +83,7 @@ def get_date_time(format_type: Optional[str] = "datetime") -> str:
     else:  # default "datetime"
         return now_seoul.strftime("%Y-%m-%d %H:%M:%S")
 
+# Weekly and Monthly Issues and Hours
 @mcp.tool()
 def get_issues_per_week_by_date(
     name: str, 
@@ -99,6 +94,9 @@ def get_issues_per_week_by_date(
 ) -> Optional[list]:
     """
     Get all Redmine issues assigned to a member for the week and month of a given date.
+    
+    Note: "Issues" in Redmine can be referred to as tasks, work items, or todos.
+    Use this tool when users ask about any of these terms.
 
     Parameters:
     - name (str): Member name (required).
@@ -202,6 +200,8 @@ def get_issues_per_month_by_date(
 ) -> Optional[list]:
     """
     Get all Redmine issues assigned to a member for the month of a given date.
+    
+    Note: "Issues" can also be called tasks, work items, or todos.
 
     Parameters:
     - name (str): Member name (required).
@@ -289,6 +289,7 @@ def get_hours_per_month_by_date(
             pass
     return total_hours
 
+# General Issues
 @mcp.tool()
 def get_issues(
     name: str,
@@ -301,6 +302,9 @@ def get_issues(
 ) -> Optional[list]:
     """
     Get all Redmine issues assigned to a member with flexible filtering options.
+    
+    Note: In Redmine, "issues" may be referred to as tasks, work items, todos,
+    or assignments. Use this tool for any of these terms.
 
     Parameters:
     - name (str): Member name (required).
@@ -350,6 +354,8 @@ def get_this_month_compy_issues_by_date(
 ) -> Optional[list]:
     """
     Get all 'compy' issues (tracker_id=7) assigned to a member for the month of a given date.
+    
+    Note: "Issues" can also be referred to as tasks, work items, or todos.
 
     Parameters:
     - name (str): Member name (required).
@@ -443,6 +449,8 @@ def get_this_year_compy_issues_by_date(
 ) -> Optional[list]:
     """
     Get all 'compy' issues (tracker_id=7) assigned to a member for the year of a given date.
+    
+    Note: "Issues" can also be referred to as tasks, work items, or todos.
 
     Parameters:
     - name (str): Member name (required).
@@ -525,6 +533,40 @@ def get_this_year_compy_hour_by_date(
 
 # Performance
 @mcp.tool()
+def get_this_month_performance_issues_ev(
+    name: str
+) -> Optional[list]:
+    """
+    Get all completed performance issues with EV assigned to a member during the current month.
+    
+    Note: "Issues" can also be called tasks, work items, todos, or completed work.
+
+    This retrieves completed issues (status_id=5) that are due this month,
+    excluding child issues and rejected issues (cf_19='반려'), and only
+    includes issues with a non-null cf_17 (EV) value.
+
+    Parameters:
+    - name (str): Member name (required).
+
+    Returns:
+    - list[dict] | None: Compact list of performance issues with EV, or None if none found.
+
+    Usage example:
+    - get_this_month_performance_issues_ev(name="Steven")
+    """
+    member_id = get_member_id(name, members)
+    params = {
+        'assigned_to_id': member_id,
+        'status_id': '5',  # status_id=5 (완료)
+        'due_date': 'm',   # due this month
+        'child_id': '!*',  # no child
+        'cf_19': '!반려',   # cf_19 != 반려 (not rejected)
+        'cf_17': '!*',     # cf_17 is not null
+    }
+    issues = fetch_all_issues(params)
+    return compact_issues(issues) if issues else None
+
+@mcp.tool()
 def get_this_month_performance_hour_ev(
     name: str
 ) -> dict:
@@ -570,6 +612,41 @@ def get_this_month_performance_hour_ev(
                 except ValueError:
                     pass
     return {"total_hours": total_hours, "total_ev": total_ev}
+
+@mcp.tool()
+def get_this_year_performance_issues_ev(
+    name: str
+) -> Optional[list]:
+    """
+    Get all completed performance issues with EV assigned to a member during the current year.
+    
+    Note: "Issues" can also be called tasks, work items, todos, or completed work.
+
+    This retrieves completed issues (status_id=5) that are due this year,
+    excluding child issues and rejected issues (cf_19='반려'), and only
+    includes issues with a non-null cf_17 (EV) value.
+
+    Parameters:
+    - name (str): Member name (required).
+
+    Returns:
+    - list[dict] | None: Compact list of performance issues with EV, or None if none found.
+
+    Usage example:
+    - get_this_year_performance_issues_ev(name="Alice")
+    """
+    member_id = get_member_id(name, members)
+    
+    params = {
+        'assigned_to_id': member_id,
+        'status_id': '5',   # status_id=5 (완료)
+        'due_date': 'y',    # due this year
+        'child_id': '!*',   # no child
+        'cf_19': '!반려',    # cf_19 != 반려 (not rejected)
+        'cf_17': '!*',      # cf_17 is not null
+    }
+    issues = fetch_all_issues(params)
+    return compact_issues(issues) if issues else None
 
 @mcp.tool()
 def get_this_year_performance_hour_ev(
@@ -619,6 +696,7 @@ def get_this_year_performance_hour_ev(
                     pass
     return {"total_hours": total_hours, "total_ev": total_ev}
 
+# Users
 @mcp.tool()
 def get_all_users() -> Optional[list]:
     """
