@@ -121,7 +121,7 @@ def fetch_all_issues(params: dict) -> list:
 def fetch_all_users(params: dict = {}) -> list:
     """
     Fetch all users from Redmine using pagination, given initial params (optional).
-    Returns a combined list of all users.
+    Returns a combined list of all users with an added 'name' field formatted appropriately.
     """
     total_users = []
     offset = 0
@@ -135,6 +135,29 @@ def fetch_all_users(params: dict = {}) -> list:
         result = request('/users.json', params=paged_params)
         if result["status_code"] == 200 and result["body"] and "users" in result["body"]:
             users = result["body"]["users"]
+            # Add 'name' field to each user combining lastname and firstname
+            for user in users:
+                lastname = user.get("lastname", "").strip()
+                firstname = user.get("firstname", "").strip()
+                
+                # Check if lastname contains Korean characters
+                def has_korean(text):
+                    return bool(re.search(r'[\uAC00-\uD7A3]', text))
+                
+                # Format name based on language
+                if lastname and firstname:
+                    if has_korean(lastname):
+                        # Korean: no space between lastname and firstname
+                        user["name"] = f"{lastname}{firstname}"
+                    else:
+                        # English/Latin: space between lastname and firstname
+                        user["name"] = f"{lastname} {firstname}"
+                elif lastname:
+                    user["name"] = lastname
+                elif firstname:
+                    user["name"] = firstname
+                else:
+                    user["name"] = user.get("login", "")
             total_users.extend(users)
             if len(users) < limit:
                 break
@@ -158,25 +181,38 @@ def get_member_id(name: str, members=None) -> str:
     return member_id
 
 
+def fetch_all_projects(params: dict = {}) -> list:
+    """
+    Fetch all projects from Redmine using pagination, given initial params (optional).
+    Returns a combined list of all projects.
+    """
+    total_projects = []
+    offset = 0
+    limit = 100
+    while True:
+        paged_params = params.copy()
+        paged_params.update({
+            'limit': limit,
+            'offset': offset
+        })
+        result = request('/projects.json', params=paged_params)
+        if result["status_code"] == 200 and result["body"] and "projects" in result["body"]:
+            projects = result["body"]["projects"]
+            total_projects.extend(projects)
+            if len(projects) < limit:
+                break
+            offset += limit
+        else:
+            raise RuntimeError(f"Failed to fetch projects: {result['error']}")
+    return total_projects
+
+
 def get_project_id(project: str) -> str:
     """
     Retrieve all projects from Redmine and return the ID of the project whose name or identifier exactly matches the given project string (case-insensitive).
     Raise ValueError if not found.
     """
-    offset = 0
-    limit = 100
-    projects = []
-    while True:
-        params = {'limit': limit, 'offset': offset}
-        result = request('/projects.json', params=params)
-        if result["status_code"] == 200 and result["body"] and "projects" in result["body"]:
-            batch = result["body"]["projects"]
-            projects.extend(batch)
-            if len(batch) < limit:
-                break
-            offset += limit
-        else:
-            raise RuntimeError(f"Failed to fetch projects: {result['error']}")
+    projects = fetch_all_projects()
     project_lower = project.strip().lower()
     for p in projects:
         name_lower = p.get("name", "").strip().lower()
@@ -266,6 +302,7 @@ def compact_issues(issues):
             "PV": get_custom_field(issue, "PV"),
             "EV": get_custom_field(issue, "EV"),
             "합의필요사항": get_custom_field(issue, "합의필요사항"),
+            "agreed": not bool(get_custom_field(issue, "합의필요사항")),
             "초기계획WBS": get_custom_field(issue, "초기계획WBS"),
             "스프린트(주)": get_custom_field(issue, "스프린트(주)"),
             "스프린트(월)": get_custom_field(issue, "스프린트(월)"),

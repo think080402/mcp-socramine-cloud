@@ -13,7 +13,8 @@ from helper import (
     parse_priority_param,
     compact_issues,
     get_project_id,
-    fetch_all_users
+    fetch_all_users,
+    fetch_all_projects
 )
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -103,7 +104,9 @@ def get_issues_per_week_by_date(
     - selected_date (str): A concrete date in YYYY-MM-DD format.
       The tool will automatically determine the corresponding week and month.
       Do NOT provide start_date or end_date.
-    - status (str, optional): Issue status. Defaults to '*'.
+    - status (str, optional): Issue status. Valid values: '신규', '진행 중', '검수대기', 
+      '승인대기', '완료됨', '반려됨', '계획 수립 필요', '계획 검토 필요(진행 중)', '보류됨', 
+      '완료요청', '구현됨', or '*' for all statuses. Defaults to '*'.
     - tracker_type (str, optional): Tracker type filter.
     - priority (str, optional): Priority filter.
 
@@ -112,7 +115,7 @@ def get_issues_per_week_by_date(
 
     Usage examples:
     - get_issues_per_week_by_date(name="Steven", selected_date="2025-08-28")
-    - get_issues_per_week_by_date(name="Alice", selected_date="2025-08-01", status="open")
+    - get_issues_per_week_by_date(name="Alice", selected_date="2025-08-01", status="*")
     """
     member_id = get_member_id(name, members)
     status_id = parse_status_param(status, issue_statuses)
@@ -152,7 +155,9 @@ def get_hours_per_week_by_date(
     - selected_date (str): A single date in YYYY-MM-DD format.
       The tool automatically determines the week and month.
       Do NOT provide start_date or end_date.
-    - status (str, optional): Issue status. Defaults to '*'.
+    - status (str, optional): Issue status. Valid values: '신규', '진행 중', '검수대기', 
+      '승인대기', '완료됨', '반려됨', '계획 수립 필요', '계획 검토 필요(진행 중)', '보류됨', 
+      '완료요청', '구현됨', or '*' for all statuses. Defaults to '*'.
     - tracker_type (str, optional): Tracker type filter.
     - priority (str, optional): Priority filter.
 
@@ -207,7 +212,9 @@ def get_issues_per_month_by_date(
     - name (str): Member name (required).
     - selected_date (str): A concrete date in YYYY-MM-DD format.
       The tool determines the month automatically.
-    - status (str, optional): Issue status. Defaults to '*'.
+    - status (str, optional): Issue status. Valid values: '신규', '진행 중', '검수대기', 
+      '승인대기', '완료됨', '반려됨', '계획 수립 필요', '계획 검토 필요(진행 중)', '보류됨', 
+      '완료요청', '구현됨', or '*' for all statuses. Defaults to '*'.
     - tracker_type (str, optional): Tracker type filter.
     - priority (str, optional): Priority filter.
 
@@ -252,7 +259,9 @@ def get_hours_per_month_by_date(
     Parameters:
     - name (str): Member name (required).
     - selected_date (str): Concrete date in YYYY-MM-DD format. 
-    - status (str, optional): Issue status. Defaults to '*'.
+    - status (str, optional): Issue status. Valid values: '신규', '진행 중', '검수대기', 
+      '승인대기', '완료됨', '반려됨', '계획 수립 필요', '계획 검토 필요(진행 중)', '보류됨', 
+      '완료요청', '구현됨', or '*' for all statuses. Defaults to '*'.
     - tracker_type (str, optional): Tracker type filter.
     - priority (str, optional): Priority filter.
 
@@ -311,7 +320,9 @@ def get_issues(
     - project (str, optional): Project name filter.
     - start_date (str, optional): Start date filter in YYYY-MM-DD format.
     - due_date (str, optional): Due date filter in YYYY-MM-DD format.
-    - status (str, optional): Issue status. Defaults to '*'.
+    - status (str, optional): Issue status. Valid values: '신규', '진행 중', '검수대기', 
+      '승인대기', '완료됨', '반려됨', '계획 수립 필요', '계획 검토 필요(진행 중)', '보류됨', 
+      '완료요청', '구현됨', or '*' for all statuses. Defaults to '*'.
     - tracker_type (str, optional): Tracker type filter.
     - priority (str, optional): Priority filter.
 
@@ -320,7 +331,7 @@ def get_issues(
 
     Usage examples:
     - get_issues(name="Steven")
-    - get_issues(name="Alice", status="open", tracker_type="Bug")
+    - get_issues(name="Alice", status="*", tracker_type="Bug")
     - get_issues(name="Bob", project="ProjectX", start_date="2025-01-01", due_date="2025-12-31")
     """
     member_id = get_member_id(name, members)
@@ -361,7 +372,9 @@ def get_this_month_compy_issues_by_date(
     - name (str): Member name (required).
     - selected_date (str): Concrete date in YYYY-MM-DD format.
       The tool determines the month automatically.
-    - status (str, optional): Issue status. Defaults to '*'.
+    - status (str, optional): Issue status. Valid values: '신규', '진행 중', '검수대기', 
+      '승인대기', '완료됨', '반려됨', '계획 수립 필요', '계획 검토 필요(진행 중)', '보류됨', 
+      '완료요청', '구현됨', or '*' for all statuses. Defaults to '*'.
     - priority (str, optional): Priority filter.
 
     Returns:
@@ -369,7 +382,7 @@ def get_this_month_compy_issues_by_date(
 
     Usage examples:
     - get_this_month_compy_issues_by_date(name="Alice", selected_date="2025-08-28")
-    - get_this_month_compy_issues_by_date(name="Steven", selected_date="2025-11-11", status="open")
+    - get_this_month_compy_issues_by_date(name="Steven", selected_date="2025-11-11", status="*")
     """
     member_id = get_member_id(name, members)
     status_id = parse_status_param(status, issue_statuses)
@@ -405,7 +418,9 @@ def get_this_month_compy_hour_by_date(
     - name (str): Member name (required).
     - selected_date (str): Concrete date in YYYY-MM-DD format.
       The tool determines the month automatically.
-    - status (str, optional): Issue status. Defaults to '*'.
+    - status (str, optional): Issue status. Valid values: '신규', '진행 중', '검수대기', 
+      '승인대기', '완료됨', '반려됨', '계획 수립 필요', '계획 검토 필요(진행 중)', '보류됨', 
+      '완료요청', '구현됨', or '*' for all statuses. Defaults to '*'.
     - priority (str, optional): Priority filter.
 
     Returns:
@@ -413,7 +428,7 @@ def get_this_month_compy_hour_by_date(
 
     Usage examples:
     - get_this_month_compy_hour_by_date(name="Steven", selected_date="2025-08-28")
-    - get_this_month_compy_hour_by_date(name="Alice", selected_date="2025-11-11", status="open")
+    - get_this_month_compy_hour_by_date(name="Alice", selected_date="2025-11-11", status="*")
     """
     member_id = get_member_id(name, members)
     status_id = parse_status_param(status, issue_statuses)
@@ -456,7 +471,9 @@ def get_this_year_compy_issues_by_date(
     - name (str): Member name (required).
     - selected_date (str): Concrete date in YYYY-MM-DD format.
       The tool determines the year automatically.
-    - status (str, optional): Issue status. Defaults to '*'.
+    - status (str, optional): Issue status. Valid values: '신규', '진행 중', '검수대기', 
+      '승인대기', '완료됨', '반려됨', '계획 수립 필요', '계획 검토 필요(진행 중)', '보류됨', 
+      '완료요청', '구현됨', or '*' for all statuses. Defaults to '*'.
     - priority (str, optional): Priority filter.
 
     Returns:
@@ -464,7 +481,7 @@ def get_this_year_compy_issues_by_date(
 
     Usage examples:
     - get_this_year_compy_issues_by_date(name="Steven", selected_date="2025-08-28")
-    - get_this_year_compy_issues_by_date(name="Bob", selected_date="2025-11-11", status="closed")
+    - get_this_year_compy_issues_by_date(name="Bob", selected_date="2025-11-11", status="*")
     """
     member_id = get_member_id(name, members)
     status_id = parse_status_param(status, issue_statuses)
@@ -493,12 +510,17 @@ def get_this_year_compy_hour_by_date(
     """
     Calculate the total estimated hours for 'compy' issues (tracker_id=7) 
     assigned to a member for the year of a given date.
+    
+    Note: When asked for "all employees" or "everyone", first call get_all_users() to get 
+    the list of users, then call this function for each user.
 
     Parameters:
     - name (str): Member name (required).
     - selected_date (str): Concrete date in YYYY-MM-DD format.
       The tool determines the year automatically.
-    - status (str, optional): Issue status. Defaults to '*'.
+    - status (str, optional): Issue status. Valid values: '신규', '진행 중', '검수대기', 
+      '승인대기', '완료됨', '반려됨', '계획 수립 필요', '계획 검토 필요(진행 중)', '보류됨', 
+      '완료요청', '구현됨', or '*' for all statuses. Defaults to '*'.
     - priority (str, optional): Priority filter.
 
     Returns:
@@ -506,7 +528,7 @@ def get_this_year_compy_hour_by_date(
 
     Usage examples:
     - get_this_year_compy_hour_by_date(name="Alice", selected_date="2025-08-28")
-    - get_this_year_compy_hour_by_date(name="Steven", selected_date="2025-11-11", status="open")
+    - get_this_year_compy_hour_by_date(name="Steven", selected_date="2025-11-11", status="*")
     """
     member_id = get_member_id(name, members)
     status_id = parse_status_param(status, issue_statuses)
@@ -696,6 +718,34 @@ def get_this_year_performance_hour_ev(
                     pass
     return {"total_hours": total_hours, "total_ev": total_ev}
 
+# Projects
+@mcp.tool()
+def get_all_projects() -> Optional[list]:
+    """
+    Retrieve all projects from Redmine.
+
+    This function fetches the complete list of projects available in the Redmine system.
+    
+    Returns:
+    - list[dict] | None: List of project objects with their details. Each project object includes:
+      * 'id': Project ID
+      * 'name': Project name
+      * 'identifier': Project identifier (unique key)
+      * 'description': Project description
+      * 'status': Project status
+      * 'is_public': Whether the project is public
+      * 'created_on': Creation date
+      * 'updated_on': Last update date
+      * Other Redmine project fields
+      Returns None if no projects found.
+
+    Usage examples:
+    - get_all_projects()
+    """
+    projects = fetch_all_projects()
+    return projects if projects else None
+
+
 # Users
 @mcp.tool()
 def get_all_users() -> Optional[list]:
@@ -703,12 +753,29 @@ def get_all_users() -> Optional[list]:
     Retrieve all users from Redmine.
 
     This function fetches the complete list of users available in the Redmine system.
+    
+    Use this tool when:
+    - User asks for data "for all employees", "for everyone", "for each person", or "for all users"
+    - You need to iterate through all team members to collect aggregate data
+    - After getting the user list, call other tools (like get_this_year_compy_hour_by_date, 
+      get_issues_per_month_by_date, etc.) for each user to gather their individual data
 
     Returns:
-    - list[dict] | None: List of user objects with their details, or None if no users found.
+    - list[dict] | None: List of user objects with their details. Each user object includes:
+      * 'id': User ID
+      * 'login': Username
+      * 'firstname': First name
+      * 'lastname': Last name
+      * 'name': Full name formatted appropriately (auto-generated, use this for other MCP calls)
+        - Korean names: "lastname+firstname" (no space)
+        - Latin/English names: "lastname firstname" (with space)
+      * Other Redmine user fields
+      Returns None if no users found.
 
-    Usage example:
+    Usage examples:
     - get_all_users()
+    - When user asks "show compy hours for all employees", call this first, then iterate through 
+      each user calling get_this_year_compy_hour_by_date(name=user['name'], ...) for each one
     """
     users = fetch_all_users()
     return users if users else None
