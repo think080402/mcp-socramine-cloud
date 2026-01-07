@@ -553,6 +553,62 @@ def get_this_year_compy_hour_by_date(
             pass
     return total_hours
 
+@mcp.tool()
+def get_unagreed_compy_issues_by_year(
+    selected_date: str,
+    name: Optional[str] = None,
+    status: Optional[str] = '*',
+    priority: Optional[str] = None,
+) -> Optional[list]:
+    """
+    Get all 'compy' issues (tracker_id=7) that are not yet agreed (have '합의필요사항' filled) 
+    for the year of a given date. Can filter by a specific member or get for all members.
+    
+    An issue is considered "not agreed" when it has content in the '합의필요사항' 
+    (agreement needed) custom field.
+
+    Note: "Issues" can also be referred to as tasks, work items, or todos.
+
+    Parameters:
+    - selected_date (str): Concrete date in YYYY-MM-DD format.
+      The tool determines the year automatically.
+    - name (str, optional): Member name. If not provided, returns unagreed issues for all members.
+    - status (str, optional): Issue status. Valid values: '신규', '진행 중', '검수대기', 
+      '승인대기', '완료됨', '반려됨', '계획 수립 필요', '계획 검토 필요(진행 중)', '보류됨', 
+      '완료요청', '구현됨', or '*' for all statuses. Defaults to '*'.
+    - priority (str, optional): Priority filter.
+
+    Returns:
+    - list[dict] | None: Compact list of unagreed compy issues with 'agreed': false, 
+      or None if none found.
+
+    Usage examples:
+    - get_unagreed_compy_issues_by_year(selected_date="2026-01-07")  # All members
+    - get_unagreed_compy_issues_by_year(selected_date="2026-01-07", name="Steven")  # Specific member
+    - get_unagreed_compy_issues_by_year(selected_date="2025-08-28", status="진행 중")
+    """
+    date_obj = parse_date(selected_date)
+    status_id = parse_status_param(status, issue_statuses)
+    priority_id = parse_priority_param(priority, priorities) if priority is not None else None
+    
+    params = {
+        'cf_38': str(date_obj.year),
+        'tracker_id': '7',  # compy
+        'cf_18': '*'  # cf_18 is '합의필요사항' - must have value (not agreed)
+    }
+    
+    if name:
+        member_id = get_member_id(name, members)
+        params['assigned_to_id'] = member_id
+    
+    if status_id is not None:
+        params['status_id'] = status_id
+    if priority_id:
+        params['priority_id'] = priority_id
+    
+    issues = fetch_all_issues(params)
+    return compact_issues(issues) if issues else None
+
 # Performance
 @mcp.tool()
 def get_this_month_performance_issues_ev(
@@ -722,12 +778,13 @@ def get_this_year_performance_hour_ev(
 @mcp.tool()
 def get_all_projects() -> Optional[list]:
     """
-    Retrieve all projects from Redmine.
+    Retrieve all leaf projects (innermost child projects) from Redmine.
 
-    This function fetches the complete list of projects available in the Redmine system.
+    This function fetches projects from the Redmine system and filters to return only
+    the most inner child projects (leaf projects) - those that don't have any children.
     
     Returns:
-    - list[dict] | None: List of project objects with their details. Each project object includes:
+    - list[dict] | None: List of leaf project objects with their details. Each project object includes:
       * 'id': Project ID
       * 'name': Project name
       * 'identifier': Project identifier (unique key)
@@ -742,8 +799,85 @@ def get_all_projects() -> Optional[list]:
     Usage examples:
     - get_all_projects()
     """
-    projects = fetch_all_projects()
-    return projects if projects else None
+    all_projects = fetch_all_projects()
+    if not all_projects:
+        return None
+    
+    # Build a set of all parent project IDs
+    parent_ids = set()
+    for project in all_projects:
+        parent = project.get('parent')
+        if parent:
+            parent_ids.add(parent.get('id'))
+    
+    # Filter to only leaf projects (projects that are not parents)
+    leaf_projects = [p for p in all_projects if p.get('id') not in parent_ids]
+    
+    return leaf_projects if leaf_projects else None
+
+
+@mcp.tool()
+def get_delayed_tasks_by_project(project: str) -> Optional[list]:
+    """
+    Get all delayed tasks in a specific project.
+    
+    A task is considered delayed if:
+    - It has a due date that is in the past (before today)
+    - It has status '신규' (new) or '진행 중' (in progress)
+    
+    Note: "Tasks" in Redmine can be referred to as issues, work items, or todos.
+
+    Parameters:
+    - project (str): Project name or identifier (required).
+
+    Returns:
+    - list[dict] | None: A compact list of delayed tasks, or None if none found.
+      Each task includes:
+      * 'id': Task ID
+      * 'subject': Task subject/title
+      * 'status': Current status
+      * 'due_date': Original due date
+      * 'assigned_to': Person assigned to the task
+      * Other relevant fields
+
+    Usage examples:
+    - get_delayed_tasks_by_project(project="My Project")
+    - get_delayed_tasks_by_project(project="project-identifier")
+    """
+    project_id = get_project_id(project)
+    
+    # Get current date in Seoul timezone
+    utc_now = datetime.datetime.utcnow()
+    seoul_offset = datetime.timedelta(hours=9)
+    today = (utc_now + seoul_offset).date()
+    
+    # Fetch issues with status '신규' (1) or '진행 중' (2)
+    # These are the only statuses that count as delayed when overdue
+    delayed_tasks = []
+    
+    for status_id in ['1', '2']:  # 1='신규', 2='진행 중'
+        params = {
+            'project_id': project_id,
+            'status_id': status_id
+        }
+        
+        issues = fetch_all_issues(params)
+        
+        # Filter for tasks with due_date < today
+        for issue in issues:
+            due_date_str = issue.get('due_date')
+            
+            if due_date_str:
+                try:
+                    due_date = datetime.datetime.strptime(due_date_str, '%Y-%m-%d').date()
+                    # Check if overdue
+                    if due_date < today:
+                        delayed_tasks.append(issue)
+                except ValueError:
+                    # Skip issues with invalid date format
+                    pass
+    
+    return compact_issues(delayed_tasks) if delayed_tasks else None
 
 
 # Users
