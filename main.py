@@ -98,6 +98,14 @@ def get_issues_per_week_by_date(
     
     Note: "Issues" in Redmine can be referred to as tasks, work items, or todos.
     Use this tool when users ask about any of these terms.
+    
+    **IMPORTANT: Use this tool for weekly agreement status checks.**
+    Each issue includes an "agreed" field:
+    - agreed=true: The task is agreed (no agreement needed)
+    - agreed=false: The task needs agreement (has content in '합의필요사항')
+    
+    When users ask about "agreed tasks this week" or "is all tasks agreed", use this tool
+    and check the "agreed" field in the results.
 
     Parameters:
     - name (str): Member name (required).
@@ -111,7 +119,8 @@ def get_issues_per_week_by_date(
     - priority (str, optional): Priority filter.
 
     Returns:
-    - list[dict] | None: A compact list of issues for that member, or None if none found.
+    - list[dict] | None: A compact list of issues for that member with "agreed" field, 
+      or None if none found.
 
     Usage examples:
     - get_issues_per_week_by_date(name="Steven", selected_date="2025-08-28")
