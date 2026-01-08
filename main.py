@@ -784,16 +784,12 @@ def get_all_projects() -> Optional[list]:
     the most inner child projects (leaf projects) - those that don't have any children.
     
     Returns:
-    - list[dict] | None: List of leaf project objects with their details. Each project object includes:
+    - list[dict] | None: List of leaf project objects with their essential details. Each project object includes:
       * 'id': Project ID
       * 'name': Project name
       * 'identifier': Project identifier (unique key)
-      * 'description': Project description
+      * 'description': Project description (if available)
       * 'status': Project status
-      * 'is_public': Whether the project is public
-      * 'created_on': Creation date
-      * 'updated_on': Last update date
-      * Other Redmine project fields
       Returns None if no projects found.
 
     Usage examples:
@@ -813,13 +809,25 @@ def get_all_projects() -> Optional[list]:
     # Filter to only leaf projects (projects that are not parents)
     leaf_projects = [p for p in all_projects if p.get('id') not in parent_ids]
     
-    return leaf_projects if leaf_projects else None
+    # Return only essential fields to avoid context length issues
+    compact_projects = [
+        {
+            'id': p.get('id'),
+            'name': p.get('name'),
+            'identifier': p.get('identifier'),
+            'description': p.get('description', ''),
+            'status': p.get('status')
+        }
+        for p in leaf_projects
+    ]
+    
+    return compact_projects if compact_projects else None
 
 
 @mcp.tool()
-def get_delayed_tasks_by_project(project: str) -> Optional[list]:
+def get_delayed_tasks_by_project(project: str) -> Optional[dict]:
     """
-    Get all delayed tasks in a specific project.
+    Get all delayed tasks in a specific project with total estimated hours.
     
     A task is considered delayed if:
     - It has a due date that is in the past (before today)
@@ -831,14 +839,18 @@ def get_delayed_tasks_by_project(project: str) -> Optional[list]:
     - project (str): Project name or identifier (required).
 
     Returns:
-    - list[dict] | None: A compact list of delayed tasks, or None if none found.
+    - dict | None: A dictionary containing:
+      * 'tasks': Compact list of delayed tasks
+      * 'total_hours': Total estimated hours of all delayed tasks
+      * 'task_count': Number of delayed tasks
       Each task includes:
       * 'id': Task ID
       * 'subject': Task subject/title
       * 'status': Current status
       * 'due_date': Original due date
       * 'assigned_to': Person assigned to the task
-      * Other relevant fields
+      * 'estimated_hours': Estimated hours for this task
+      Returns None if no delayed tasks found.
 
     Usage examples:
     - get_delayed_tasks_by_project(project="My Project")
@@ -877,7 +889,111 @@ def get_delayed_tasks_by_project(project: str) -> Optional[list]:
                     # Skip issues with invalid date format
                     pass
     
-    return compact_issues(delayed_tasks) if delayed_tasks else None
+    if not delayed_tasks:
+        return None
+    
+    # Calculate total hours
+    total_hours = 0.0
+    for task in delayed_tasks:
+        total_hours += float(task.get("estimated_hours", 0) or 0)
+    
+    return {
+        "tasks": compact_issues(delayed_tasks),
+        "total_hours": total_hours,
+        "task_count": len(delayed_tasks)
+    }
+
+
+@mcp.tool()
+def get_all_projects_with_delayed_tasks() -> Optional[list]:
+    """
+    Get all projects that have delayed tasks, with task count and total hours for each.
+    
+    A task is considered delayed if:
+    - It has a due date that is in the past (before today)
+    - It has status '신규' (new) or '진행 중' (in progress)
+    
+    This is useful for getting an overview of all projects with overdue work.
+    
+    Returns:
+    - list[dict] | None: List of projects with delayed tasks, or None if none found.
+      Each entry includes:
+      * 'project_id': Project ID
+      * 'project_name': Project name
+      * 'task_count': Number of delayed tasks
+      * 'total_hours': Total estimated hours of delayed tasks
+      Returns None if no projects have delayed tasks.
+
+    Usage examples:
+    - get_all_projects_with_delayed_tasks()
+    """
+    # Get current date in Seoul timezone
+    utc_now = datetime.datetime.utcnow()
+    seoul_offset = datetime.timedelta(hours=9)
+    today = (utc_now + seoul_offset).date()
+    
+    # Get all leaf projects
+    all_projects = fetch_all_projects()
+    if not all_projects:
+        return None
+    
+    # Build a set of all parent project IDs
+    parent_ids = set()
+    for project in all_projects:
+        parent = project.get('parent')
+        if parent:
+            parent_ids.add(parent.get('id'))
+    
+    # Filter to only leaf projects
+    leaf_projects = [p for p in all_projects if p.get('id') not in parent_ids]
+    
+    # Check each project for delayed tasks
+    projects_with_delays = []
+    
+    for project in leaf_projects:
+        project_id = str(project.get('id'))
+        delayed_tasks = []
+        
+        # Fetch issues with status '신규' (1) or '진행 중' (2)
+        for status_id in ['1', '2']:
+            params = {
+                'project_id': project_id,
+                'status_id': status_id
+            }
+            
+            try:
+                issues = fetch_all_issues(params)
+                
+                # Filter for tasks with due_date < today
+                for issue in issues:
+                    due_date_str = issue.get('due_date')
+                    
+                    if due_date_str:
+                        try:
+                            due_date = datetime.datetime.strptime(due_date_str, '%Y-%m-%d').date()
+                            # Check if overdue
+                            if due_date < today:
+                                delayed_tasks.append(issue)
+                        except ValueError:
+                            pass
+            except Exception:
+                # Skip projects that fail to fetch
+                continue
+        
+        # If project has delayed tasks, add to results
+        if delayed_tasks:
+            total_hours = 0.0
+            for task in delayed_tasks:
+                total_hours += float(task.get("estimated_hours", 0) or 0)
+            
+            projects_with_delays.append({
+                "project_id": project.get('id'),
+                "project_name": project.get('name'),
+                "task_count": len(delayed_tasks),
+                "total_hours": total_hours
+            })
+    
+    return projects_with_delays if projects_with_delays else None
 
 
 # Users
