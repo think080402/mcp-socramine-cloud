@@ -788,7 +788,6 @@ def get_all_projects() -> Optional[list]:
       * 'id': Project ID
       * 'name': Project name
       * 'identifier': Project identifier (unique key)
-      * 'description': Project description (if available)
       * 'status': Project status
       Returns None if no projects found.
 
@@ -810,12 +809,12 @@ def get_all_projects() -> Optional[list]:
     leaf_projects = [p for p in all_projects if p.get('id') not in parent_ids]
     
     # Return only essential fields to avoid context length issues
+    # Removed description field as it can be very long
     compact_projects = [
         {
             'id': p.get('id'),
             'name': p.get('name'),
             'identifier': p.get('identifier'),
-            'description': p.get('description', ''),
             'status': p.get('status')
         }
         for p in leaf_projects
@@ -932,66 +931,78 @@ def get_all_projects_with_delayed_tasks() -> Optional[list]:
     seoul_offset = datetime.timedelta(hours=9)
     today = (utc_now + seoul_offset).date()
     
-    # Get all leaf projects
+    # Fetch ALL delayed tasks across all projects in just 2 API calls
+    # This is much faster than querying each project individually
+    all_delayed_tasks = []
+    
+    for status_id in ['1', '2']:  # 1='신규', 2='진행 중'
+        params = {
+            'status_id': status_id
+        }
+        
+        try:
+            issues = fetch_all_issues(params)
+            
+            # Filter for tasks with due_date < today
+            for issue in issues:
+                due_date_str = issue.get('due_date')
+                
+                if due_date_str:
+                    try:
+                        due_date = datetime.datetime.strptime(due_date_str, '%Y-%m-%d').date()
+                        # Check if overdue
+                        if due_date < today:
+                            all_delayed_tasks.append(issue)
+                    except ValueError:
+                        pass
+        except Exception:
+            continue
+    
+    if not all_delayed_tasks:
+        return None
+    
+    # Get all projects to build project name lookup
     all_projects = fetch_all_projects()
     if not all_projects:
         return None
     
-    # Build a set of all parent project IDs
+    # Build project ID to name mapping
+    project_map = {p.get('id'): p.get('name') for p in all_projects}
+    
+    # Build a set of all parent project IDs to identify leaf projects
     parent_ids = set()
     for project in all_projects:
         parent = project.get('parent')
         if parent:
             parent_ids.add(parent.get('id'))
     
-    # Filter to only leaf projects
-    leaf_projects = [p for p in all_projects if p.get('id') not in parent_ids]
+    # Group delayed tasks by project
+    project_delays = {}
     
-    # Check each project for delayed tasks
-    projects_with_delays = []
-    
-    for project in leaf_projects:
-        project_id = str(project.get('id'))
-        delayed_tasks = []
+    for task in all_delayed_tasks:
+        project = task.get('project')
+        if not project:
+            continue
+            
+        project_id = project.get('id')
         
-        # Fetch issues with status '신규' (1) or '진행 중' (2)
-        for status_id in ['1', '2']:
-            params = {
+        # Only include leaf projects (not parent projects)
+        if project_id in parent_ids:
+            continue
+        
+        if project_id not in project_delays:
+            project_delays[project_id] = {
                 'project_id': project_id,
-                'status_id': status_id
+                'project_name': project_map.get(project_id, 'Unknown'),
+                'task_count': 0,
+                'total_hours': 0.0
             }
-            
-            try:
-                issues = fetch_all_issues(params)
-                
-                # Filter for tasks with due_date < today
-                for issue in issues:
-                    due_date_str = issue.get('due_date')
-                    
-                    if due_date_str:
-                        try:
-                            due_date = datetime.datetime.strptime(due_date_str, '%Y-%m-%d').date()
-                            # Check if overdue
-                            if due_date < today:
-                                delayed_tasks.append(issue)
-                        except ValueError:
-                            pass
-            except Exception:
-                # Skip projects that fail to fetch
-                continue
         
-        # If project has delayed tasks, add to results
-        if delayed_tasks:
-            total_hours = 0.0
-            for task in delayed_tasks:
-                total_hours += float(task.get("estimated_hours", 0) or 0)
-            
-            projects_with_delays.append({
-                "project_id": project.get('id'),
-                "project_name": project.get('name'),
-                "task_count": len(delayed_tasks),
-                "total_hours": total_hours
-            })
+        project_delays[project_id]['task_count'] += 1
+        project_delays[project_id]['total_hours'] += float(task.get("estimated_hours", 0) or 0)
+    
+    # Convert to list and sort by project name
+    projects_with_delays = sorted(project_delays.values(), key=lambda x: x['project_name'])
     
     return projects_with_delays if projects_with_delays else None
 
