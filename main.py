@@ -14,7 +14,12 @@ from helper import (
     compact_issues,
     get_project_id,
     fetch_all_users,
-    fetch_all_projects
+    fetch_all_projects,
+    get_issue_details,
+    get_issue_journals,
+    get_issue_children,
+    get_issue_parent,
+    get_issue_attachments
 )
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -1049,6 +1054,1460 @@ def get_all_users() -> Optional[list]:
     """
     users = fetch_all_users()
     return users if users else None
+
+
+# Planning Analysis - All Members
+@mcp.tool()
+def get_all_members_weekly_plan(
+    selected_date: str,
+    include_unagreed: bool = False
+) -> Optional[list]:
+    """
+    Get planned hours and PV for ALL members for a specific week.
+    
+    Use this when user asks about "전체 인원" (all personnel), "모든 사람" (everyone), 
+    or "팀 전체" (whole team) for weekly planning.
+    
+    This tool aggregates planning data across all team members, showing:
+    - Total planned hours (agreed only or including unagreed)
+    - Total PV (Planned Value)
+    - Breakdown by agreement status
+    
+    Parameters:
+    - selected_date (str): Date in YYYY-MM-DD format to determine which week.
+    - include_unagreed (bool): 
+        * False (default): Only count agreed tasks (합의필요사항 is empty)
+        * True: Include both agreed and unagreed tasks
+    
+    Returns:
+    - list[dict] | None: List of all members with their planning data:
+      * 'name': Member name
+      * 'total_hours': Total planned hours (based on include_unagreed setting)
+      * 'total_pv': Total PV (based on include_unagreed setting)
+      * 'agreed_hours': Hours from agreed tasks only
+      * 'agreed_pv': PV from agreed tasks only
+      * 'unagreed_hours': Hours from unagreed tasks
+      * 'unagreed_pv': PV from unagreed tasks
+      Returns None if no users or data found.
+    
+    Usage examples:
+    - get_all_members_weekly_plan(selected_date="2026-01-27", include_unagreed=False)
+    - get_all_members_weekly_plan(selected_date="2026-01-27", include_unagreed=True)
+    """
+    users = fetch_all_users()
+    if not users:
+        return None
+    
+    date_obj = parse_date(selected_date)
+    week_label, month_label = get_week_and_month_label(date_obj)
+    
+    results = []
+    
+    for user in users:
+        name = user.get('name')
+        if not name:
+            continue
+            
+        try:
+            member_id = get_member_id(name, members)
+        except ValueError:
+            # Skip users not in members list
+            continue
+        
+        params = {
+            'assigned_to_id': member_id,
+            'cf_38': str(date_obj.year),
+            'cf_41': week_label,
+            'cf_42': month_label,
+        }
+        
+        issues = fetch_all_issues(params)
+        
+        agreed_hours = 0.0
+        agreed_pv = 0.0
+        unagreed_hours = 0.0
+        unagreed_pv = 0.0
+        
+        for issue in issues:
+            # Get estimated hours
+            hours = float(issue.get("estimated_hours", 0) or 0)
+            
+            # Get PV from custom fields
+            pv = 0.0
+            for cf in issue.get("custom_fields", []):
+                if cf.get("name") == "PV":
+                    try:
+                        pv = float(cf.get("value", 0) or 0)
+                    except ValueError:
+                        pass
+                    break
+            
+            # Check if agreed (합의필요사항 is empty)
+            is_agreed = True
+            for cf in issue.get("custom_fields", []):
+                if cf.get("name") == "합의필요사항":
+                    if cf.get("value"):
+                        is_agreed = False
+                    break
+            
+            if is_agreed:
+                agreed_hours += hours
+                agreed_pv += pv
+            else:
+                unagreed_hours += hours
+                unagreed_pv += pv
+        
+        if include_unagreed:
+            total_hours = agreed_hours + unagreed_hours
+            total_pv = agreed_pv + unagreed_pv
+        else:
+            total_hours = agreed_hours
+            total_pv = agreed_pv
+        
+        results.append({
+            'name': name,
+            'total_hours': total_hours,
+            'total_pv': total_pv,
+            'agreed_hours': agreed_hours,
+            'agreed_pv': agreed_pv,
+            'unagreed_hours': unagreed_hours,
+            'unagreed_pv': unagreed_pv
+        })
+    
+    return results if results else None
+
+
+@mcp.tool()
+def get_all_members_monthly_plan(
+    selected_date: str,
+    include_unagreed: bool = False
+) -> Optional[list]:
+    """
+    Get planned hours and PV for ALL members for a specific month.
+    
+    Use this when user asks about "전체 인원" (all personnel), "모든 사람" (everyone), 
+    or "팀 전체" (whole team) for monthly planning.
+    
+    This tool aggregates planning data across all team members for a full month.
+    
+    Parameters:
+    - selected_date (str): Date in YYYY-MM-DD format to determine which month.
+    - include_unagreed (bool): 
+        * False (default): Only count agreed tasks (합의필요사항 is empty)
+        * True: Include both agreed and unagreed tasks
+    
+    Returns:
+    - list[dict] | None: List of all members with their planning data:
+      * 'name': Member name
+      * 'total_hours': Total planned hours (based on include_unagreed setting)
+      * 'total_pv': Total PV (based on include_unagreed setting)
+      * 'agreed_hours': Hours from agreed tasks only
+      * 'agreed_pv': PV from agreed tasks only
+      * 'unagreed_hours': Hours from unagreed tasks
+      * 'unagreed_pv': PV from unagreed tasks
+      Returns None if no users or data found.
+    
+    Usage examples:
+    - get_all_members_monthly_plan(selected_date="2026-02-01", include_unagreed=False)
+    - get_all_members_monthly_plan(selected_date="2026-02-15", include_unagreed=True)
+    """
+    users = fetch_all_users()
+    if not users:
+        return None
+    
+    date_obj = parse_date(selected_date)
+    week_label, month_label = get_week_and_month_label(date_obj)
+    
+    results = []
+    
+    for user in users:
+        name = user.get('name')
+        if not name:
+            continue
+            
+        try:
+            member_id = get_member_id(name, members)
+        except ValueError:
+            # Skip users not in members list
+            continue
+        
+        params = {
+            'assigned_to_id': member_id,
+            'cf_38': str(date_obj.year),
+            'cf_42': month_label,
+        }
+        
+        issues = fetch_all_issues(params)
+        
+        agreed_hours = 0.0
+        agreed_pv = 0.0
+        unagreed_hours = 0.0
+        unagreed_pv = 0.0
+        
+        for issue in issues:
+            # Get estimated hours
+            hours = float(issue.get("estimated_hours", 0) or 0)
+            
+            # Get PV from custom fields
+            pv = 0.0
+            for cf in issue.get("custom_fields", []):
+                if cf.get("name") == "PV":
+                    try:
+                        pv = float(cf.get("value", 0) or 0)
+                    except ValueError:
+                        pass
+                    break
+            
+            # Check if agreed (합의필요사항 is empty)
+            is_agreed = True
+            for cf in issue.get("custom_fields", []):
+                if cf.get("name") == "합의필요사항":
+                    if cf.get("value"):
+                        is_agreed = False
+                    break
+            
+            if is_agreed:
+                agreed_hours += hours
+                agreed_pv += pv
+            else:
+                unagreed_hours += hours
+                unagreed_pv += pv
+        
+        if include_unagreed:
+            total_hours = agreed_hours + unagreed_hours
+            total_pv = agreed_pv + unagreed_pv
+        else:
+            total_hours = agreed_hours
+            total_pv = agreed_pv
+        
+        results.append({
+            'name': name,
+            'total_hours': total_hours,
+            'total_pv': total_pv,
+            'agreed_hours': agreed_hours,
+            'agreed_pv': agreed_pv,
+            'unagreed_hours': unagreed_hours,
+            'unagreed_pv': unagreed_pv
+        })
+    
+    return results if results else None
+
+
+@mcp.tool()
+def get_members_below_weekly_threshold(
+    selected_date: str,
+    threshold: float = 40.0,
+    include_unagreed: bool = False
+) -> Optional[list]:
+    """
+    Find members who have less than the threshold hours planned for a specific week.
+    
+    Use this to identify team members who are under-planned for the week.
+    Default threshold is 40 hours (standard full-time week).
+    
+    This is useful for answering questions like:
+    - "다음주 40시간의 계획이 잡혀 있지 않은 사람" (people without 40h planned next week)
+    - "Who has less than full planning for next week?"
+    
+    Parameters:
+    - selected_date (str): Date in YYYY-MM-DD format to determine which week.
+    - threshold (float): Minimum hours threshold. Default is 40.0 hours.
+    - include_unagreed (bool):
+        * False (default): Only count agreed tasks
+        * True: Include both agreed and unagreed tasks
+    
+    Returns:
+    - list[dict] | None: List of members below threshold, sorted by hours (lowest first):
+      * 'name': Member name
+      * 'hours': Total planned hours
+      * 'pv': Total PV
+      * 'shortfall': How many hours below threshold
+      * 'agreed_hours': Hours from agreed tasks only
+      * 'agreed_pv': PV from agreed tasks only
+      Returns None if all members meet threshold or no data found.
+    
+    Usage examples:
+    - get_members_below_weekly_threshold(selected_date="2026-01-27")
+    - get_members_below_weekly_threshold(selected_date="2026-01-27", threshold=40.0, include_unagreed=True)
+    """
+    all_plans = get_all_members_weekly_plan(selected_date, include_unagreed)
+    
+    if not all_plans:
+        return None
+    
+    below_threshold = []
+    
+    for member in all_plans:
+        if member['total_hours'] < threshold:
+            below_threshold.append({
+                'name': member['name'],
+                'hours': member['total_hours'],
+                'pv': member['total_pv'],
+                'shortfall': threshold - member['total_hours'],
+                'agreed_hours': member['agreed_hours'],
+                'agreed_pv': member['agreed_pv']
+            })
+    
+    # Sort by hours (lowest first)
+    below_threshold.sort(key=lambda x: x['hours'])
+    
+    return below_threshold if below_threshold else None
+
+
+@mcp.tool()
+def get_members_below_monthly_threshold(
+    selected_date: str,
+    threshold: float = 160.0,
+    include_unagreed: bool = False
+) -> Optional[list]:
+    """
+    Find members who have less than the threshold hours planned for a specific month.
+    
+    Use this to identify team members who are under-planned for the month.
+    Default threshold is 160 hours (standard full-time month: 4 weeks × 40 hours).
+    
+    This is useful for answering questions like:
+    - "다음달 160시간의 계획이 잡혀 있지 않은 사람" (people without 160h planned next month)
+    - "Who has less than full planning for next month?"
+    
+    Parameters:
+    - selected_date (str): Date in YYYY-MM-DD format to determine which month.
+    - threshold (float): Minimum hours threshold. Default is 160.0 hours.
+    - include_unagreed (bool):
+        * False (default): Only count agreed tasks
+        * True: Include both agreed and unagreed tasks
+    
+    Returns:
+    - list[dict] | None: List of members below threshold, sorted by hours (lowest first):
+      * 'name': Member name
+      * 'hours': Total planned hours
+      * 'pv': Total PV
+      * 'shortfall': How many hours below threshold
+      * 'agreed_hours': Hours from agreed tasks only
+      * 'agreed_pv': PV from agreed tasks only
+      Returns None if all members meet threshold or no data found.
+    
+    Usage examples:
+    - get_members_below_monthly_threshold(selected_date="2026-02-01")
+    - get_members_below_monthly_threshold(selected_date="2026-02-15", threshold=160.0, include_unagreed=True)
+    """
+    all_plans = get_all_members_monthly_plan(selected_date, include_unagreed)
+    
+    if not all_plans:
+        return None
+    
+    below_threshold = []
+    
+    for member in all_plans:
+        if member['total_hours'] < threshold:
+            below_threshold.append({
+                'name': member['name'],
+                'hours': member['total_hours'],
+                'pv': member['total_pv'],
+                'shortfall': threshold - member['total_hours'],
+                'agreed_hours': member['agreed_hours'],
+                'agreed_pv': member['agreed_pv']
+            })
+    
+    # Sort by hours (lowest first)
+    below_threshold.sort(key=lambda x: x['hours'])
+    
+    return below_threshold if below_threshold else None
+
+
+# Achievement Analysis - All Members
+@mcp.tool()
+def get_all_members_weekly_achievement(
+    selected_date: str,
+    status: str = '완료됨'
+) -> Optional[list]:
+    """
+    Get achievement hours, EV, PV, and CPI for ALL members for a specific week.
+    
+    Use this when user asks about "전체 인원의 달성" (all personnel's achievement) for a week.
+    Tracks actual work completed/in-review based on status filter.
+    
+    CPI (Cost Performance Index) = EV / PV
+    - CPI > 1.0: Over-performing (delivering more value than planned)
+    - CPI = 1.0: On target
+    - CPI < 1.0: Under-performing
+    
+    Parameters:
+    - selected_date (str): Date in YYYY-MM-DD format to determine which week.
+    - status (str): Status filter for achievement tracking. Options:
+        * '완료됨' (default): Completed tasks (status_id=5)
+        * '검수대기': Review waiting tasks (status_id=3)
+        * '완료됨,검수대기': Both completed and review waiting
+    
+    Returns:
+    - list[dict] | None: List of all members with their achievement data:
+      * 'name': Member name
+      * 'hours': Achieved hours
+      * 'pv': Total PV for achieved tasks
+      * 'ev': Total EV (Earned Value)
+      * 'cpi': Cost Performance Index (EV/PV, or 0 if PV=0)
+      Returns None if no users or data found.
+    
+    Usage examples:
+    - get_all_members_weekly_achievement(selected_date="2026-01-20", status='완료됨')
+    - get_all_members_weekly_achievement(selected_date="2026-01-13", status='검수대기')
+    """
+    users = fetch_all_users()
+    if not users:
+        return None
+    
+    status_id = parse_status_param(status, issue_statuses)
+    date_obj = parse_date(selected_date)
+    week_label, month_label = get_week_and_month_label(date_obj)
+    
+    results = []
+    
+    for user in users:
+        name = user.get('name')
+        if not name:
+            continue
+            
+        try:
+            member_id = get_member_id(name, members)
+        except ValueError:
+            continue
+        
+        params = {
+            'assigned_to_id': member_id,
+            'status_id': status_id,
+            'cf_38': str(date_obj.year),
+            'cf_41': week_label,
+            'cf_42': month_label,
+        }
+        
+        issues = fetch_all_issues(params)
+        
+        total_hours = 0.0
+        total_pv = 0.0
+        total_ev = 0.0
+        
+        for issue in issues:
+            # Get estimated hours
+            hours = float(issue.get("estimated_hours", 0) or 0)
+            total_hours += hours
+            
+            # Get PV and EV from custom fields
+            for cf in issue.get("custom_fields", []):
+                if cf.get("name") == "PV":
+                    try:
+                        total_pv += float(cf.get("value", 0) or 0)
+                    except ValueError:
+                        pass
+                elif cf.get("name") == "EV":
+                    try:
+                        total_ev += float(cf.get("value", 0) or 0)
+                    except ValueError:
+                        pass
+        
+        # Calculate CPI
+        cpi = total_ev / total_pv if total_pv > 0 else 0.0
+        
+        results.append({
+            'name': name,
+            'hours': total_hours,
+            'pv': total_pv,
+            'ev': total_ev,
+            'cpi': cpi
+        })
+    
+    return results if results else None
+
+
+@mcp.tool()
+def get_all_members_monthly_achievement(
+    selected_date: str,
+    status: str = '완료됨'
+) -> Optional[list]:
+    """
+    Get achievement hours, EV, PV, and CPI for ALL members for a specific month.
+    
+    Use this when user asks about "전체 인원의 달성" (all personnel's achievement) for a month.
+    
+    CPI (Cost Performance Index) = EV / PV
+    - CPI > 1.0: Over-performing
+    - CPI = 1.0: On target
+    - CPI < 1.0: Under-performing
+    
+    Parameters:
+    - selected_date (str): Date in YYYY-MM-DD format to determine which month.
+    - status (str): Status filter for achievement tracking. Options:
+        * '완료됨' (default): Completed tasks (status_id=5)
+        * '검수대기': Review waiting tasks (status_id=3)
+        * '완료됨,검수대기': Both completed and review waiting
+    
+    Returns:
+    - list[dict] | None: List of all members with their achievement data:
+      * 'name': Member name
+      * 'hours': Achieved hours
+      * 'pv': Total PV for achieved tasks
+      * 'ev': Total EV (Earned Value)
+      * 'cpi': Cost Performance Index (EV/PV, or 0 if PV=0)
+      Returns None if no users or data found.
+    
+    Usage examples:
+    - get_all_members_monthly_achievement(selected_date="2026-01-15", status='완료됨')
+    - get_all_members_monthly_achievement(selected_date="2025-12-15", status='검수대기')
+    """
+    users = fetch_all_users()
+    if not users:
+        return None
+    
+    status_id = parse_status_param(status, issue_statuses)
+    date_obj = parse_date(selected_date)
+    week_label, month_label = get_week_and_month_label(date_obj)
+    
+    results = []
+    
+    for user in users:
+        name = user.get('name')
+        if not name:
+            continue
+            
+        try:
+            member_id = get_member_id(name, members)
+        except ValueError:
+            continue
+        
+        params = {
+            'assigned_to_id': member_id,
+            'status_id': status_id,
+            'cf_38': str(date_obj.year),
+            'cf_42': month_label,
+        }
+        
+        issues = fetch_all_issues(params)
+        
+        total_hours = 0.0
+        total_pv = 0.0
+        total_ev = 0.0
+        
+        for issue in issues:
+            # Get estimated hours
+            hours = float(issue.get("estimated_hours", 0) or 0)
+            total_hours += hours
+            
+            # Get PV and EV from custom fields
+            for cf in issue.get("custom_fields", []):
+                if cf.get("name") == "PV":
+                    try:
+                        total_pv += float(cf.get("value", 0) or 0)
+                    except ValueError:
+                        pass
+                elif cf.get("name") == "EV":
+                    try:
+                        total_ev += float(cf.get("value", 0) or 0)
+                    except ValueError:
+                        pass
+        
+        # Calculate CPI
+        cpi = total_ev / total_pv if total_pv > 0 else 0.0
+        
+        results.append({
+            'name': name,
+            'hours': total_hours,
+            'pv': total_pv,
+            'ev': total_ev,
+            'cpi': cpi
+        })
+    
+    return results if results else None
+
+
+@mcp.tool()
+def get_members_below_weekly_achievement_threshold(
+    selected_date: str,
+    threshold: float = 40.0,
+    status: str = '완료됨'
+) -> Optional[list]:
+    """
+    Find members who achieved less than threshold hours for a specific week.
+    
+    Use this to identify team members who under-achieved for the week.
+    Default threshold is 40 hours (standard full-time week).
+    
+    This is useful for answering questions like:
+    - "이번주 40시간을 달성하지 못한 사람" (people who didn't achieve 40h this week)
+    - "Who completed less than 40 hours this week?"
+    
+    Parameters:
+    - selected_date (str): Date in YYYY-MM-DD format to determine which week.
+    - threshold (float): Minimum hours threshold. Default is 40.0 hours.
+    - status (str): Status filter. Options:
+        * '완료됨' (default): Completed tasks only
+        * '검수대기': Review waiting tasks only
+        * '완료됨,검수대기': Both
+    
+    Returns:
+    - list[dict] | None: List of members below threshold, sorted by hours (lowest first):
+      * 'name': Member name
+      * 'hours': Achieved hours
+      * 'ev': Total EV
+      * 'pv': Total PV
+      * 'cpi': Cost Performance Index
+      * 'shortfall': How many hours below threshold
+      Returns None if all members meet threshold or no data found.
+    
+    Usage examples:
+    - get_members_below_weekly_achievement_threshold(selected_date="2026-01-20")
+    - get_members_below_weekly_achievement_threshold(selected_date="2026-01-20", status='검수대기')
+    """
+    all_achievements = get_all_members_weekly_achievement(selected_date, status)
+    
+    if not all_achievements:
+        return None
+    
+    below_threshold = []
+    
+    for member in all_achievements:
+        if member['hours'] < threshold:
+            below_threshold.append({
+                'name': member['name'],
+                'hours': member['hours'],
+                'ev': member['ev'],
+                'pv': member['pv'],
+                'cpi': member['cpi'],
+                'shortfall': threshold - member['hours']
+            })
+    
+    # Sort by hours (lowest first)
+    below_threshold.sort(key=lambda x: x['hours'])
+    
+    return below_threshold if below_threshold else None
+
+
+@mcp.tool()
+def get_members_below_monthly_achievement_threshold(
+    selected_date: str,
+    threshold: float = 160.0,
+    status: str = '완료됨'
+) -> Optional[list]:
+    """
+    Find members who achieved less than threshold hours for a specific month.
+    
+    Use this to identify team members who under-achieved for the month.
+    Default threshold is 160 hours (standard full-time month: 4 weeks × 40 hours).
+    
+    This is useful for answering questions like:
+    - "이번달 160시간을 달성하지 못한 사람" (people who didn't achieve 160h this month)
+    - "Who completed less than 160 hours this month?"
+    
+    Parameters:
+    - selected_date (str): Date in YYYY-MM-DD format to determine which month.
+    - threshold (float): Minimum hours threshold. Default is 160.0 hours.
+    - status (str): Status filter. Options:
+        * '완료됨' (default): Completed tasks only
+        * '검수대기': Review waiting tasks only
+        * '완료됨,검수대기': Both
+    
+    Returns:
+    - list[dict] | None: List of members below threshold, sorted by hours (lowest first):
+      * 'name': Member name
+      * 'hours': Achieved hours
+      * 'ev': Total EV
+      * 'pv': Total PV
+      * 'cpi': Cost Performance Index
+      * 'shortfall': How many hours below threshold
+      Returns None if all members meet threshold or no data found.
+    
+    Usage examples:
+    - get_members_below_monthly_achievement_threshold(selected_date="2026-01-15")
+    - get_members_below_monthly_achievement_threshold(selected_date="2025-12-15", status='검수대기')
+    """
+    all_achievements = get_all_members_monthly_achievement(selected_date, status)
+    
+    if not all_achievements:
+        return None
+    
+    below_threshold = []
+    
+    for member in all_achievements:
+        if member['hours'] < threshold:
+            below_threshold.append({
+                'name': member['name'],
+                'hours': member['hours'],
+                'ev': member['ev'],
+                'pv': member['pv'],
+                'cpi': member['cpi'],
+                'shortfall': threshold - member['hours']
+            })
+    
+    # Sort by hours (lowest first)
+    below_threshold.sort(key=lambda x: x['hours'])
+    
+    return below_threshold if below_threshold else None
+
+
+@mcp.tool()
+def get_all_members_ytd_achievement(
+    current_date: str,
+    status: str = '완료됨'
+) -> Optional[list]:
+    """
+    Get year-to-date (YTD) cumulative achievement for ALL members up to a specific date.
+    
+    Use this when user asks about "지금까지 누적" (cumulative so far) or 
+    "올해 누적" (this year's cumulative) achievement.
+    
+    This calculates the cumulative hours, PV, EV, and CPI from the beginning 
+    of the year up to the specified date.
+    
+    Parameters:
+    - current_date (str): Date in YYYY-MM-DD format up to which to calculate YTD.
+    - status (str): Status filter. Options:
+        * '완료됨' (default): Completed tasks only
+        * '검수대기': Review waiting tasks only
+        * '완료됨,검수대기': Both
+    
+    Returns:
+    - list[dict] | None: List of all members with their YTD achievement:
+      * 'name': Member name
+      * 'ytd_hours': Year-to-date hours
+      * 'ytd_pv': Year-to-date PV
+      * 'ytd_ev': Year-to-date EV
+      * 'ytd_cpi': Year-to-date CPI (EV/PV)
+      * 'target_hours': Expected target hours based on weeks elapsed
+      * 'hours_vs_target': Difference from target (negative = under-target)
+      Returns None if no users or data found.
+    
+    Usage examples:
+    - get_all_members_ytd_achievement(current_date="2026-01-19", status='완료됨')
+    """
+    users = fetch_all_users()
+    if not users:
+        return None
+    
+    status_id = parse_status_param(status, issue_statuses)
+    date_obj = parse_date(current_date)
+    year = date_obj.year
+    
+    # Calculate how many weeks have elapsed in the year
+    # Assuming standard work year: 40 hours/week target
+    year_start = datetime.date(year, 1, 1)
+    days_elapsed = (date_obj - year_start).days + 1
+    weeks_elapsed = days_elapsed / 7.0
+    target_hours = weeks_elapsed * 40.0  # 40 hours per week target
+    
+    results = []
+    
+    for user in users:
+        name = user.get('name')
+        if not name:
+            continue
+            
+        try:
+            member_id = get_member_id(name, members)
+        except ValueError:
+            continue
+        
+        # Fetch all issues for the year with the specified status
+        params = {
+            'assigned_to_id': member_id,
+            'status_id': status_id,
+            'cf_38': str(year),
+        }
+        
+        issues = fetch_all_issues(params)
+        
+        ytd_hours = 0.0
+        ytd_pv = 0.0
+        ytd_ev = 0.0
+        
+        for issue in issues:
+            # Get estimated hours
+            hours = float(issue.get("estimated_hours", 0) or 0)
+            ytd_hours += hours
+            
+            # Get PV and EV from custom fields
+            for cf in issue.get("custom_fields", []):
+                if cf.get("name") == "PV":
+                    try:
+                        ytd_pv += float(cf.get("value", 0) or 0)
+                    except ValueError:
+                        pass
+                elif cf.get("name") == "EV":
+                    try:
+                        ytd_ev += float(cf.get("value", 0) or 0)
+                    except ValueError:
+                        pass
+        
+        # Calculate YTD CPI
+        ytd_cpi = ytd_ev / ytd_pv if ytd_pv > 0 else 0.0
+        
+        results.append({
+            'name': name,
+            'ytd_hours': ytd_hours,
+            'ytd_pv': ytd_pv,
+            'ytd_ev': ytd_ev,
+            'ytd_cpi': ytd_cpi,
+            'target_hours': target_hours,
+            'hours_vs_target': ytd_hours - target_hours
+        })
+    
+    return results if results else None
+
+
+@mcp.tool()
+def get_members_below_ytd_target(
+    current_date: str,
+    status: str = '완료됨'
+) -> Optional[list]:
+    """
+    Find members who haven't met their year-to-date cumulative hour target.
+    
+    Use this when user asks:
+    - "지금까지 누적해서 목표시간을 달성하지 못한 사람" 
+      (people who haven't achieved cumulative target hours)
+    
+    Target is calculated as: (weeks elapsed in year) × 40 hours/week
+    
+    Parameters:
+    - current_date (str): Date in YYYY-MM-DD format for YTD calculation.
+    - status (str): Status filter. Options:
+        * '완료됨' (default): Completed tasks only
+        * '검수대기': Review waiting tasks only
+        * '완료됨,검수대기': Both
+    
+    Returns:
+    - list[dict] | None: List of members below YTD target, sorted by shortfall:
+      * 'name': Member name
+      * 'ytd_hours': Year-to-date hours achieved
+      * 'target_hours': Expected target hours
+      * 'shortfall': Hours below target (positive number)
+      * 'ytd_ev': Year-to-date EV
+      * 'ytd_pv': Year-to-date PV
+      * 'ytd_cpi': Year-to-date CPI
+      Returns None if all members meet target or no data found.
+    
+    Usage examples:
+    - get_members_below_ytd_target(current_date="2026-01-19")
+    """
+    all_ytd = get_all_members_ytd_achievement(current_date, status)
+    
+    if not all_ytd:
+        return None
+    
+    below_target = []
+    
+    for member in all_ytd:
+        if member['hours_vs_target'] < 0:  # Below target
+            below_target.append({
+                'name': member['name'],
+                'ytd_hours': member['ytd_hours'],
+                'target_hours': member['target_hours'],
+                'shortfall': abs(member['hours_vs_target']),
+                'ytd_ev': member['ytd_ev'],
+                'ytd_pv': member['ytd_pv'],
+                'ytd_cpi': member['ytd_cpi']
+            })
+    
+    # Sort by shortfall (largest shortfall first)
+    below_target.sort(key=lambda x: x['shortfall'], reverse=True)
+    
+    return below_target if below_target else None
+
+
+@mcp.tool()
+def get_members_below_cpi_threshold(
+    current_date: str,
+    cpi_threshold: float = 1.0,
+    status: str = '완료됨'
+) -> Optional[list]:
+    """
+    Find members with year-to-date CPI below threshold (under-performing).
+    
+    Use this when user asks:
+    - "지금까지 누적해서 CPI를 달성하지 못한 사람" 
+      (people who haven't achieved CPI target)
+    
+    CPI (Cost Performance Index) = EV / PV
+    - CPI < 1.0: Under-performing (delivering less value than planned)
+    - CPI = 1.0: On target
+    - CPI > 1.0: Over-performing
+    
+    Parameters:
+    - current_date (str): Date in YYYY-MM-DD format for YTD calculation.
+    - cpi_threshold (float): Minimum CPI threshold. Default is 1.0.
+    - status (str): Status filter. Options:
+        * '완료됨' (default): Completed tasks only
+        * '검수대기': Review waiting tasks only
+        * '완료됨,검수대기': Both
+    
+    Returns:
+    - list[dict] | None: List of members below CPI threshold, sorted by CPI (lowest first):
+      * 'name': Member name
+      * 'ytd_hours': Year-to-date hours
+      * 'ytd_ev': Year-to-date EV
+      * 'ytd_pv': Year-to-date PV
+      * 'ytd_cpi': Year-to-date CPI
+      * 'cpi_gap': How far below threshold (positive number)
+      Returns None if all members meet CPI threshold or no data found.
+    
+    Usage examples:
+    - get_members_below_cpi_threshold(current_date="2026-01-19")
+    - get_members_below_cpi_threshold(current_date="2026-01-19", cpi_threshold=0.9)
+    """
+    all_ytd = get_all_members_ytd_achievement(current_date, status)
+    
+    if not all_ytd:
+        return None
+    
+    below_cpi = []
+    
+    for member in all_ytd:
+        if member['ytd_cpi'] < cpi_threshold and member['ytd_pv'] > 0:
+            below_cpi.append({
+                'name': member['name'],
+                'ytd_hours': member['ytd_hours'],
+                'ytd_ev': member['ytd_ev'],
+                'ytd_pv': member['ytd_pv'],
+                'ytd_cpi': member['ytd_cpi'],
+                'cpi_gap': cpi_threshold - member['ytd_cpi']
+            })
+    
+    # Sort by CPI (lowest first)
+    below_cpi.sort(key=lambda x: x['ytd_cpi'])
+    
+    return below_cpi if below_cpi else None
+
+
+# Compliance Checking - Rules Validation
+@mcp.tool()
+def find_agreement_violations_removed(
+    start_date: str,
+    end_date: Optional[str] = None
+) -> Optional[list]:
+    """
+    Find issues where performance agreement (합의필요사항) was arbitrarily removed.
+    
+    This detects when someone cleared the '합의필요사항' field after it had content,
+    which may indicate improper process bypass.
+    
+    Use this when user asks:
+    - "성과합의를 임의로 해제한 일감이 있는지" (issues with agreement arbitrarily removed)
+    
+    Parameters:
+    - start_date (str): Start date in YYYY-MM-DD format to check from.
+    - end_date (str, optional): End date in YYYY-MM-DD format. If None, checks up to today.
+    
+    Returns:
+    - list[dict] | None: List of issues with agreement violations:
+      * 'issue_id': Issue ID
+      * 'subject': Issue subject
+      * 'removed_by': User who removed the agreement
+      * 'removed_on': Date when removed
+      * 'old_value': Previous agreement content
+      Returns None if no violations found.
+    
+    Usage examples:
+    - find_agreement_violations_removed(start_date="2026-01-01")
+    - find_agreement_violations_removed(start_date="2025-12-01", end_date="2025-12-31")
+    """
+    start_obj = parse_date(start_date)
+    end_obj = parse_date(end_date) if end_date else datetime.date.today()
+    
+    # Fetch all issues updated in the date range
+    params = {
+        'updated_on': f'>={start_date}'
+    }
+    if end_date:
+        params['updated_on'] = f'><{start_date}|{end_date}'
+    
+    issues = fetch_all_issues(params)
+    
+    violations = []
+    
+    for issue in issues:
+        issue_id = issue.get("id")
+        journals = get_issue_journals(issue_id)
+        
+        for journal in journals:
+            journal_date = journal.get("created_on", "")
+            if not journal_date:
+                continue
+            
+            # Parse journal date
+            try:
+                journal_obj = datetime.datetime.fromisoformat(journal_date.replace('Z', '+00:00')).date()
+                if not (start_obj <= journal_obj <= end_obj):
+                    continue
+            except:
+                continue
+            
+            # Check if 합의필요사항 (cf_17) was changed from something to empty
+            for change in journal.get("changes", []):
+                if change.get("property") == "cf" and change.get("name") == "17":  # cf_17 = 합의필요사항
+                    old_val = change.get("old_value")
+                    new_val = change.get("new_value")
+                    
+                    # Violation: had content, now empty
+                    if old_val and not new_val:
+                        violations.append({
+                            'issue_id': issue_id,
+                            'subject': issue.get("subject"),
+                            'removed_by': journal.get("user"),
+                            'removed_on': journal_date,
+                            'old_value': old_val
+                        })
+    
+    return violations if violations else None
+
+
+@mcp.tool()
+def find_hours_increased_after_agreement(
+    start_date: str,
+    end_date: Optional[str] = None
+) -> Optional[list]:
+    """
+    Find issues where estimated hours increased AFTER performance agreement was completed.
+    
+    This detects when someone increased hours after clearing '합의필요사항',
+    which may violate the agreement process.
+    
+    Use this when user asks:
+    - "성과합의 이후에 시간이 늘어난 일감이 있는지" (issues with hours increased after agreement)
+    
+    Parameters:
+    - start_date (str): Start date in YYYY-MM-DD format to check from.
+    - end_date (str, optional): End date in YYYY-MM-DD format. If None, checks up to today.
+    
+    Returns:
+    - list[dict] | None: List of issues with hour increase violations:
+      * 'issue_id': Issue ID
+      * 'subject': Issue subject
+      * 'increased_by': User who increased hours
+      * 'increased_on': Date when increased
+      * 'old_hours': Previous hours
+      * 'new_hours': New hours
+      * 'increase': Amount of increase
+      Returns None if no violations found.
+    
+    Usage examples:
+    - find_hours_increased_after_agreement(start_date="2026-01-01")
+    """
+    start_obj = parse_date(start_date)
+    end_obj = parse_date(end_date) if end_date else datetime.date.today()
+    
+    params = {
+        'updated_on': f'>={start_date}'
+    }
+    if end_date:
+        params['updated_on'] = f'><{start_date}|{end_date}'
+    
+    issues = fetch_all_issues(params)
+    
+    violations = []
+    
+    for issue in issues:
+        issue_id = issue.get("id")
+        journals = get_issue_journals(issue_id)
+        
+        # Track when agreement was cleared
+        agreement_cleared_date = None
+        
+        for journal in journals:
+            journal_date = journal.get("created_on", "")
+            if not journal_date:
+                continue
+            
+            try:
+                journal_obj = datetime.datetime.fromisoformat(journal_date.replace('Z', '+00:00'))
+            except:
+                continue
+            
+            for change in journal.get("changes", []):
+                # Track when 합의필요사항 was cleared
+                if change.get("property") == "cf" and change.get("name") == "17":
+                    old_val = change.get("old_value")
+                    new_val = change.get("new_value")
+                    if old_val and not new_val:
+                        agreement_cleared_date = journal_obj
+                
+                # Check if hours increased AFTER agreement was cleared
+                if change.get("property") == "attr" and change.get("name") == "estimated_hours":
+                    old_hours = float(change.get("old_value") or 0)
+                    new_hours = float(change.get("new_value") or 0)
+                    
+                    if new_hours > old_hours and agreement_cleared_date and journal_obj > agreement_cleared_date:
+                        if start_obj <= journal_obj.date() <= end_obj:
+                            violations.append({
+                                'issue_id': issue_id,
+                                'subject': issue.get("subject"),
+                                'increased_by': journal.get("user"),
+                                'increased_on': journal_date,
+                                'old_hours': old_hours,
+                                'new_hours': new_hours,
+                                'increase': new_hours - old_hours
+                            })
+    
+    return violations if violations else None
+
+
+@mcp.tool()
+def find_quality_review_removed(
+    start_date: str,
+    end_date: Optional[str] = None
+) -> Optional[list]:
+    """
+    Find issues where quality review requirement (품질검토필요) was arbitrarily removed.
+    
+    This detects when someone changed '초기계획WBS' from '품질검토필요' (value=1) to another value,
+    which may indicate improper process bypass.
+    
+    Use this when user asks:
+    - "품질검토필요 값이 임의로 해제된 일감이 있는지" (issues with quality review arbitrarily removed)
+    
+    Parameters:
+    - start_date (str): Start date in YYYY-MM-DD format to check from.
+    - end_date (str, optional): End date in YYYY-MM-DD format. If None, checks up to today.
+    
+    Returns:
+    - list[dict] | None: List of issues with quality review violations:
+      * 'issue_id': Issue ID
+      * 'subject': Issue subject
+      * 'removed_by': User who removed quality review
+      * 'removed_on': Date when removed
+      * 'old_value': Previous value (품질검토필요=1)
+      * 'new_value': New value
+      Returns None if no violations found.
+    
+    Usage examples:
+    - find_quality_review_removed(start_date="2026-01-01")
+    """
+    start_obj = parse_date(start_date)
+    end_obj = parse_date(end_date) if end_date else datetime.date.today()
+    
+    params = {
+        'updated_on': f'>={start_date}'
+    }
+    if end_date:
+        params['updated_on'] = f'><{start_date}|{end_date}'
+    
+    issues = fetch_all_issues(params)
+    
+    violations = []
+    
+    for issue in issues:
+        issue_id = issue.get("id")
+        journals = get_issue_journals(issue_id)
+        
+        for journal in journals:
+            journal_date = journal.get("created_on", "")
+            if not journal_date:
+                continue
+            
+            try:
+                journal_obj = datetime.datetime.fromisoformat(journal_date.replace('Z', '+00:00')).date()
+                if not (start_obj <= journal_obj <= end_obj):
+                    continue
+            except:
+                continue
+            
+            # Check if 초기계획WBS (cf_49) was changed from 품질검토필요 (1)
+            for change in journal.get("changes", []):
+                if change.get("property") == "cf" and change.get("name") == "49":  # cf_49 = 초기계획WBS
+                    old_val = change.get("old_value")
+                    new_val = change.get("new_value")
+                    
+                    # Violation: was 품질검토필요 (1), now something else
+                    if old_val == "1" and new_val != "1":
+                        violations.append({
+                            'issue_id': issue_id,
+                            'subject': issue.get("subject"),
+                            'removed_by': journal.get("user"),
+                            'removed_on': journal_date,
+                            'old_value': old_val,
+                            'new_value': new_val
+                        })
+    
+    return violations if violations else None
+
+
+@mcp.tool()
+def find_completed_mng_without_template(
+    start_date: str,
+    end_date: Optional[str] = None
+) -> Optional[list]:
+    """
+    Find completed management tasks (Mng tracker) that may not have applied standard template.
+    
+    This identifies completed Mng type tasks. Note: You may need to manually verify
+    if the template was properly applied based on your organization's standards.
+    
+    Use this when user asks:
+    - "완료된 관리 일감 중 관리 템플릿을 적용하지 않은 일감" 
+      (completed management tasks without template)
+    
+    Parameters:
+    - start_date (str): Start date in YYYY-MM-DD format to check from.
+    - end_date (str, optional): End date in YYYY-MM-DD format. If None, checks up to today.
+    
+    Returns:
+    - list[dict] | None: List of completed Mng tasks:
+      * 'issue_id': Issue ID
+      * 'subject': Issue subject
+      * 'assigned_to': Person assigned
+      * 'completed_on': When it was completed
+      * 'estimated_hours': Hours
+      Note: Manual review needed to verify template application
+      Returns None if no tasks found.
+    
+    Usage examples:
+    - find_completed_mng_without_template(start_date="2026-01-01")
+    """
+    start_obj = parse_date(start_date)
+    end_obj = parse_date(end_date) if end_date else datetime.date.today()
+    
+    # Fetch completed Mng tasks
+    params = {
+        'status_id': '5',  # 완료됨
+        'tracker_id': '10',  # Mng
+        'updated_on': f'>={start_date}'
+    }
+    if end_date:
+        params['updated_on'] = f'><{start_date}|{end_date}'
+    
+    issues = fetch_all_issues(params)
+    
+    results = []
+    
+    for issue in issues:
+        issue_id = issue.get("id")
+        journals = get_issue_journals(issue_id)
+        
+        # Find when it was completed
+        completed_on = None
+        for journal in journals:
+            for change in journal.get("changes", []):
+                if change.get("property") == "attr" and change.get("name") == "status_id":
+                    if change.get("new_value") == "5":  # Changed to 완료됨
+                        completed_on = journal.get("created_on")
+                        break
+        
+        if completed_on:
+            try:
+                completed_obj = datetime.datetime.fromisoformat(completed_on.replace('Z', '+00:00')).date()
+                if start_obj <= completed_obj <= end_obj:
+                    results.append({
+                        'issue_id': issue_id,
+                        'subject': issue.get("subject"),
+                        'assigned_to': issue.get("assigned_to", {}).get("name"),
+                        'completed_on': completed_on,
+                        'estimated_hours': issue.get("estimated_hours")
+                    })
+            except:
+                pass
+    
+    return results if results else None
+
+
+@mcp.tool()
+def find_completed_tasks_without_attachments(
+    start_date: str,
+    end_date: Optional[str] = None
+) -> Optional[list]:
+    """
+    Find completed tasks that have no description or notes (deliverables/산출물).
+    
+    This identifies completed tasks that may be missing required deliverable documentation.
+    Checks if the issue has a description field or any notes in journals.
+    
+    Use this when user asks:
+    - "완료된 일감 중 산출물이 등록되지 않은 일감" 
+      (completed tasks without deliverables registered)
+    
+    Parameters:
+    - start_date (str): Start date in YYYY-MM-DD format to check from.
+    - end_date (str, optional): End date in YYYY-MM-DD format. If None, checks up to today.
+    
+    Returns:
+    - list[dict] | None: List of completed tasks without description or notes:
+      * 'issue_id': Issue ID
+      * 'subject': Issue subject
+      * 'tracker': Task type
+      * 'assigned_to': Person assigned
+      * 'completed_on': When it was completed
+      * 'estimated_hours': Hours
+      Returns None if no tasks found.
+    
+    Usage examples:
+    - find_completed_tasks_without_attachments(start_date="2026-01-01")
+    """
+    start_obj = parse_date(start_date)
+    end_obj = parse_date(end_date) if end_date else datetime.date.today()
+    
+    # Fetch completed tasks
+    params = {
+        'status_id': '5',  # 완료됨
+        'updated_on': f'>={start_date}'
+    }
+    if end_date:
+        params['updated_on'] = f'><{start_date}|{end_date}'
+    
+    issues = fetch_all_issues(params)
+    
+    results = []
+    
+    for issue in issues:
+        issue_id = issue.get("id")
+        
+        # Get full issue details to check description
+        full_issue = get_issue_details(issue_id)
+        if not full_issue:
+            continue
+        
+        # Check if has description or notes
+        has_description = bool(full_issue.get("description", "").strip())
+        
+        # Check if has notes in journals
+        has_notes = False
+        journals = full_issue.get("journals", [])
+        for journal in journals:
+            if journal.get("notes", "").strip():
+                has_notes = True
+                break
+        
+        # If no description and no notes, it's missing documentation
+        if not has_description and not has_notes:
+            # Find when it was completed
+            completed_on = None
+            for journal in journals:
+                for change in journal.get("changes", []):
+                    if change.get("property") == "attr" and change.get("name") == "status_id":
+                        if change.get("new_value") == "5":  # Changed to 완료됨
+                            completed_on = journal.get("created_on")
+                            break
+            
+            if completed_on:
+                try:
+                    completed_obj = datetime.datetime.fromisoformat(completed_on.replace('Z', '+00:00')).date()
+                    if start_obj <= completed_obj <= end_obj:
+                        results.append({
+                            'issue_id': issue_id,
+                            'subject': issue.get("subject"),
+                            'tracker': issue.get("tracker", {}).get("name"),
+                            'assigned_to': issue.get("assigned_to", {}).get("name"),
+                            'completed_on': completed_on,
+                            'estimated_hours': issue.get("estimated_hours")
+                        })
+                except:
+                    pass
+    
+    return results if results else None
+
+
+@mcp.tool()
+def find_sprint_transfers_after_underachievement(
+    last_week_date: str,
+    threshold: float = 40.0
+) -> Optional[list]:
+    """
+    Find people who transferred last week's tasks to an earlier week after not achieving 40h.
+    
+    This detects when someone moved tasks backward in time (changed 스프린트(주) to an earlier week)
+    after failing to complete 40 hours in the original sprint week.
+    
+    Use this when user asks:
+    - "지난 주 일감이 40시간 달성이 안된 상태에서, 이전 주로 이관된 사람의 스프린트" 
+      (people who transferred to previous week after not achieving 40h last week)
+    
+    Parameters:
+    - last_week_date (str): Date in YYYY-MM-DD format within last week to check.
+    - threshold (float): Hour achievement threshold. Default is 40.0 hours.
+    
+    Returns:
+    - list[dict] | None: List of people with sprint transfer violations:
+      * 'name': Member name
+      * 'last_week_hours': Hours achieved last week (below threshold)
+      * 'transferred_issues': List of issues transferred backward:
+        - 'issue_id': Issue ID
+        - 'subject': Issue subject
+        - 'transferred_by': Who moved it
+        - 'transferred_on': When it was moved
+        - 'old_sprint_week': Original sprint week
+        - 'new_sprint_week': New (earlier) sprint week
+      Returns None if no violations found.
+    
+    Usage examples:
+    - find_sprint_transfers_after_underachievement(last_week_date="2026-01-13")
+    """
+    # First, get who didn't achieve threshold last week
+    under_achievers = get_members_below_weekly_achievement_threshold(
+        selected_date=last_week_date,
+        threshold=threshold,
+        status='완료됨'
+    )
+    
+    if not under_achievers:
+        return None
+    
+    date_obj = parse_date(last_week_date)
+    week_label, month_label = get_week_and_month_label(date_obj)
+    
+    violations = []
+    
+    for member in under_achievers:
+        name = member['name']
+        
+        try:
+            member_id = get_member_id(name, members)
+        except ValueError:
+            continue
+        
+        # Fetch issues assigned to this member in that year
+        params = {
+            'assigned_to_id': member_id,
+            'cf_38': str(date_obj.year),
+            'updated_on': f'>={last_week_date}'
+        }
+        
+        issues = fetch_all_issues(params)
+        
+        transferred_issues = []
+        
+        for issue in issues:
+            issue_id = issue.get("id")
+            journals = get_issue_journals(issue_id)
+            
+            for journal in journals:
+                # Check if 스프린트(주) (cf_41) was changed
+                for change in journal.get("changes", []):
+                    if change.get("property") == "cf" and change.get("name") == "41":  # cf_41 = 스프린트(주)
+                        old_week = change.get("old_value")
+                        new_week = change.get("new_value")
+                        
+                        # Check if moved to an earlier week (backward transfer)
+                        # Week format is like "1주차", "2주차", etc.
+                        if old_week and new_week:
+                            try:
+                                old_week_num = int(old_week.replace("주차", ""))
+                                new_week_num = int(new_week.replace("주차", ""))
+                                
+                                if new_week_num < old_week_num:  # Moved backward
+                                    transferred_issues.append({
+                                        'issue_id': issue_id,
+                                        'subject': issue.get("subject"),
+                                        'transferred_by': journal.get("user"),
+                                        'transferred_on': journal.get("created_on"),
+                                        'old_sprint_week': old_week,
+                                        'new_sprint_week': new_week
+                                    })
+                            except:
+                                pass
+        
+        if transferred_issues:
+            violations.append({
+                'name': name,
+                'last_week_hours': member['hours'],
+                'transferred_issues': transferred_issues
+            })
+    
+    return violations if violations else None
+
 
 def main():
     """Main entry point for the mcp-socramine package."""

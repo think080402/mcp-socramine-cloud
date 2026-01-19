@@ -269,6 +269,108 @@ def parse_date(date_str: str) -> datetime.date:
         raise ValueError("selected_date must be in YYYY-MM-DD format")
 
 
+def get_issue_details(issue_id: int) -> Optional[dict]:
+    """
+    Fetch full details for a single issue including journals (history).
+    """
+    result = request(f'/issues/{issue_id}.json', params={'include': 'journals,children,attachments,relations'})
+    if result["status_code"] == 200 and result["body"]:
+        return result["body"].get("issue")
+    return None
+
+
+def get_issue_journals(issue_id: int) -> list:
+    """
+    Fetch the change history (journals) for an issue.
+    Returns list of journal entries with details, user, and changes.
+    """
+    issue = get_issue_details(issue_id)
+    if not issue:
+        return []
+    
+    journals = issue.get("journals", [])
+    history = []
+    
+    for journal in journals:
+        entry = {
+            "id": journal.get("id"),
+            "user": journal.get("user", {}).get("name"),
+            "created_on": journal.get("created_on"),
+            "notes": journal.get("notes"),
+            "changes": []
+        }
+        
+        # Parse details (field changes)
+        for detail in journal.get("details", []):
+            change = {
+                "property": detail.get("property"),  # "attr" for attributes, "cf" for custom fields
+                "name": detail.get("name"),
+                "old_value": detail.get("old_value"),
+                "new_value": detail.get("new_value")
+            }
+            entry["changes"].append(change)
+        
+        if entry["changes"] or entry["notes"]:  # Only include if there are changes or notes
+            history.append(entry)
+    
+    return history
+
+
+def get_issue_children(issue_id: int) -> list:
+    """
+    Fetch child issues of a parent issue.
+    """
+    issue = get_issue_details(issue_id)
+    if not issue:
+        return []
+    
+    children = issue.get("children", [])
+    child_ids = [child.get("id") for child in children if child.get("id")]
+    
+    return child_ids
+
+
+def get_issue_parent(issue_id: int) -> Optional[dict]:
+    """
+    Fetch parent issue information if it exists.
+    """
+    issue = get_issue_details(issue_id)
+    if not issue:
+        return None
+    
+    parent = issue.get("parent")
+    if parent:
+        return {
+            "id": parent.get("id"),
+            "subject": parent.get("subject")
+        }
+    return None
+
+
+def get_issue_attachments(issue_id: int) -> list:
+    """
+    Fetch attachments for an issue.
+    """
+    issue = get_issue_details(issue_id)
+    if not issue:
+        return []
+    
+    attachments = issue.get("attachments", [])
+    result = []
+    
+    for att in attachments:
+        result.append({
+            "id": att.get("id"),
+            "filename": att.get("filename"),
+            "filesize": att.get("filesize"),
+            "content_type": att.get("content_type"),
+            "author": att.get("author", {}).get("name"),
+            "created_on": att.get("created_on")
+        })
+    
+    return result
+
+
 def compact_issues(issues):
     """
     Return a compact list of issues with only the most relevant fields.
