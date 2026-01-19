@@ -21,7 +21,11 @@ from helper import (
     get_issue_parent,
     get_issue_attachments,
     get_all_members_weekly_plan_internal,
-    get_all_members_monthly_plan_internal
+    get_all_members_monthly_plan_internal,
+    get_all_members_monthly_achievement_internal,
+    get_all_members_weekly_achievement_internal,
+    get_all_members_ytd_achievement_internal,
+    get_members_below_weekly_achievement_threshold_internal
 )
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -1295,67 +1299,7 @@ def get_all_members_weekly_achievement(
     - get_all_members_weekly_achievement(selected_date="2026-01-20", status='완료됨')
     - get_all_members_weekly_achievement(selected_date="2026-01-13", status='검수대기')
     """
-    users = fetch_all_users({'status': 1})  # 1 = active users only
-    if not users:
-        return None
-    
-    status_id = parse_status_param(status, issue_statuses)
-    date_obj = parse_date(selected_date)
-    week_label, month_label = get_week_and_month_label(date_obj)
-    
-    results = []
-    
-    for user in users:
-        name = user.get('name')
-        member_id = user.get('id')
-        
-        if not name or not member_id:
-            continue
-        
-        params = {
-            'assigned_to_id': member_id,
-            'status_id': status_id,
-            'cf_38': str(date_obj.year),
-            'cf_41': week_label,
-            'cf_42': month_label,
-        }
-        
-        issues = fetch_all_issues(params)
-        
-        total_hours = 0.0
-        total_pv = 0.0
-        total_ev = 0.0
-        
-        for issue in issues:
-            # Get estimated hours
-            hours = float(issue.get("estimated_hours", 0) or 0)
-            total_hours += hours
-            
-            # Get PV and EV from custom fields
-            for cf in issue.get("custom_fields", []):
-                if cf.get("name") == "PV":
-                    try:
-                        total_pv += float(cf.get("value", 0) or 0)
-                    except ValueError:
-                        pass
-                elif cf.get("name") == "EV":
-                    try:
-                        total_ev += float(cf.get("value", 0) or 0)
-                    except ValueError:
-                        pass
-        
-        # Calculate CPI
-        cpi = total_ev / total_pv if total_pv > 0 else 0.0
-        
-        results.append({
-            'name': name,
-            'hours': total_hours,
-            'pv': total_pv,
-            'ev': total_ev,
-            'cpi': cpi
-        })
-    
-    return results if results else None
+    return get_all_members_weekly_achievement_internal(selected_date, status, issue_statuses)
 
 
 @mcp.tool()
@@ -1393,66 +1337,7 @@ def get_all_members_monthly_achievement(
     - get_all_members_monthly_achievement(selected_date="2026-01-15", status='완료됨')
     - get_all_members_monthly_achievement(selected_date="2025-12-15", status='검수대기')
     """
-    users = fetch_all_users({'status': 1})  # 1 = active users only
-    if not users:
-        return None
-    
-    status_id = parse_status_param(status, issue_statuses)
-    date_obj = parse_date(selected_date)
-    week_label, month_label = get_week_and_month_label(date_obj)
-    
-    results = []
-    
-    for user in users:
-        name = user.get('name')
-        member_id = user.get('id')
-        
-        if not name or not member_id:
-            continue
-        
-        params = {
-            'assigned_to_id': member_id,
-            'status_id': status_id,
-            'cf_38': str(date_obj.year),
-            'cf_42': month_label,
-        }
-        
-        issues = fetch_all_issues(params)
-        
-        total_hours = 0.0
-        total_pv = 0.0
-        total_ev = 0.0
-        
-        for issue in issues:
-            # Get estimated hours
-            hours = float(issue.get("estimated_hours", 0) or 0)
-            total_hours += hours
-            
-            # Get PV and EV from custom fields
-            for cf in issue.get("custom_fields", []):
-                if cf.get("name") == "PV":
-                    try:
-                        total_pv += float(cf.get("value", 0) or 0)
-                    except ValueError:
-                        pass
-                elif cf.get("name") == "EV":
-                    try:
-                        total_ev += float(cf.get("value", 0) or 0)
-                    except ValueError:
-                        pass
-        
-        # Calculate CPI
-        cpi = total_ev / total_pv if total_pv > 0 else 0.0
-        
-        results.append({
-            'name': name,
-            'hours': total_hours,
-            'pv': total_pv,
-            'ev': total_ev,
-            'cpi': cpi
-        })
-    
-    return results if results else None
+    return get_all_members_monthly_achievement_internal(selected_date, status, issue_statuses)
 
 
 @mcp.tool()
@@ -1493,7 +1378,7 @@ def get_members_below_weekly_achievement_threshold(
     - get_members_below_weekly_achievement_threshold(selected_date="2026-01-20")
     - get_members_below_weekly_achievement_threshold(selected_date="2026-01-20", status='검수대기')
     """
-    all_achievements = get_all_members_weekly_achievement(selected_date, status)
+    all_achievements = get_all_members_weekly_achievement_internal(selected_date, status, issue_statuses)
     
     if not all_achievements:
         return None
@@ -1555,7 +1440,7 @@ def get_members_below_monthly_achievement_threshold(
     - get_members_below_monthly_achievement_threshold(selected_date="2026-01-15")
     - get_members_below_monthly_achievement_threshold(selected_date="2025-12-15", status='검수대기')
     """
-    all_achievements = get_all_members_monthly_achievement(selected_date, status)
+    all_achievements = get_all_members_monthly_achievement_internal(selected_date, status, issue_statuses)
     
     if not all_achievements:
         return None
@@ -1614,75 +1499,7 @@ def get_all_members_ytd_achievement(
     Usage examples:
     - get_all_members_ytd_achievement(current_date="2026-01-19", status='완료됨')
     """
-    users = fetch_all_users({'status': 1})  # 1 = active users only
-    if not users:
-        return None
-    
-    status_id = parse_status_param(status, issue_statuses)
-    date_obj = parse_date(current_date)
-    year = date_obj.year
-    
-    # Calculate how many weeks have elapsed in the year
-    # Assuming standard work year: 40 hours/week target
-    year_start = datetime.date(year, 1, 1)
-    days_elapsed = (date_obj - year_start).days + 1
-    weeks_elapsed = days_elapsed / 7.0
-    target_hours = weeks_elapsed * 40.0  # 40 hours per week target
-    
-    results = []
-    
-    for user in users:
-        name = user.get('name')
-        member_id = user.get('id')
-        
-        if not name or not member_id:
-            continue
-        
-        # Fetch all issues for the year with the specified status
-        params = {
-            'assigned_to_id': member_id,
-            'status_id': status_id,
-            'cf_38': str(year),
-        }
-        
-        issues = fetch_all_issues(params)
-        
-        ytd_hours = 0.0
-        ytd_pv = 0.0
-        ytd_ev = 0.0
-        
-        for issue in issues:
-            # Get estimated hours
-            hours = float(issue.get("estimated_hours", 0) or 0)
-            ytd_hours += hours
-            
-            # Get PV and EV from custom fields
-            for cf in issue.get("custom_fields", []):
-                if cf.get("name") == "PV":
-                    try:
-                        ytd_pv += float(cf.get("value", 0) or 0)
-                    except ValueError:
-                        pass
-                elif cf.get("name") == "EV":
-                    try:
-                        ytd_ev += float(cf.get("value", 0) or 0)
-                    except ValueError:
-                        pass
-        
-        # Calculate YTD CPI
-        ytd_cpi = ytd_ev / ytd_pv if ytd_pv > 0 else 0.0
-        
-        results.append({
-            'name': name,
-            'ytd_hours': ytd_hours,
-            'ytd_pv': ytd_pv,
-            'ytd_ev': ytd_ev,
-            'ytd_cpi': ytd_cpi,
-            'target_hours': target_hours,
-            'hours_vs_target': ytd_hours - target_hours
-        })
-    
-    return results if results else None
+    return get_all_members_ytd_achievement_internal(current_date, status, issue_statuses)
 
 
 @mcp.tool()
@@ -1720,7 +1537,7 @@ def get_members_below_ytd_target(
     Usage examples:
     - get_members_below_ytd_target(current_date="2026-01-19")
     """
-    all_ytd = get_all_members_ytd_achievement(current_date, status)
+    all_ytd = get_all_members_ytd_achievement_internal(current_date, status, issue_statuses)
     
     if not all_ytd:
         return None
@@ -1785,7 +1602,7 @@ def get_members_below_cpi_threshold(
     - get_members_below_cpi_threshold(current_date="2026-01-19")
     - get_members_below_cpi_threshold(current_date="2026-01-19", cpi_threshold=0.9)
     """
-    all_ytd = get_all_members_ytd_achievement(current_date, status)
+    all_ytd = get_all_members_ytd_achievement_internal(current_date, status, issue_statuses)
     
     if not all_ytd:
         return None
@@ -2270,10 +2087,11 @@ def find_sprint_transfers_after_underachievement(
     - find_sprint_transfers_after_underachievement(last_week_date="2026-01-13")
     """
     # First, get who didn't achieve threshold last week
-    under_achievers = get_members_below_weekly_achievement_threshold(
+    under_achievers = get_members_below_weekly_achievement_threshold_internal(
         selected_date=last_week_date,
         threshold=threshold,
-        status='완료됨'
+        status='완료됨',
+        issue_statuses=issue_statuses
     )
     
     if not under_achievers:
@@ -2286,11 +2104,7 @@ def find_sprint_transfers_after_underachievement(
     
     for member in under_achievers:
         name = member['name']
-        
-        try:
-            member_id = get_member_id(name, members)
-        except ValueError:
-            continue
+        member_id = member['member_id']
         
         # Fetch issues assigned to this member in that year
         params = {
