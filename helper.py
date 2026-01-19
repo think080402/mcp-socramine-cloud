@@ -121,7 +121,7 @@ def fetch_all_issues(params: dict) -> list:
 def fetch_all_users(params: dict = {}) -> list:
     """
     Fetch all users from Redmine using pagination, given initial params (optional).
-    Returns a combined list of all users.
+    Returns a combined list of all users with added 'name' field.
     """
     total_users = []
     offset = 0
@@ -135,6 +135,22 @@ def fetch_all_users(params: dict = {}) -> list:
         result = request('/users.json', params=paged_params)
         if result["status_code"] == 200 and result["body"] and "users" in result["body"]:
             users = result["body"]["users"]
+            # Add 'name' field to each user for convenience
+            for user in users:
+                firstname = user.get('firstname', '')
+                lastname = user.get('lastname', '')
+                
+                if lastname and firstname:
+                    # Check if lastname contains Korean characters (Hangul)
+                    is_korean = bool(re.search(r'[가-힣]', lastname))
+                    if is_korean:
+                        # Korean names: lastname+firstname (no space)
+                        user['name'] = f"{lastname}{firstname}"
+                    else:
+                        # English/Latin names: firstname lastname (with space)
+                        user['name'] = f"{firstname} {lastname}"
+                else:
+                    user['name'] = user.get('login', str(user.get('id', '')))
             total_users.extend(users)
             if len(users) < limit:
                 break
