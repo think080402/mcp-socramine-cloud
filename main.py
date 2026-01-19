@@ -1222,13 +1222,9 @@ def get_all_members_monthly_plan(
     
     for user in users:
         name = user.get('name')
-        if not name:
-            continue
-            
-        try:
-            member_id = get_member_id(name, members)
-        except ValueError:
-            # Skip users not in members list
+        member_id = user.get('id')
+        
+        if not name or not member_id:
             continue
         
         params = {
@@ -1464,12 +1460,9 @@ def get_all_members_weekly_achievement(
     
     for user in users:
         name = user.get('name')
-        if not name:
-            continue
-            
-        try:
-            member_id = get_member_id(name, members)
-        except ValueError:
+        member_id = user.get('id')
+        
+        if not name or not member_id:
             continue
         
         params = {
@@ -1565,12 +1558,9 @@ def get_all_members_monthly_achievement(
     
     for user in users:
         name = user.get('name')
-        if not name:
-            continue
-            
-        try:
-            member_id = get_member_id(name, members)
-        except ValueError:
+        member_id = user.get('id')
+        
+        if not name or not member_id:
             continue
         
         params = {
@@ -1796,12 +1786,9 @@ def get_all_members_ytd_achievement(
     
     for user in users:
         name = user.get('name')
-        if not name:
-            continue
-            
-        try:
-            member_id = get_member_id(name, members)
-        except ValueError:
+        member_id = user.get('id')
+        
+        if not name or not member_id:
             continue
         
         # Fetch all issues for the year with the specified status
