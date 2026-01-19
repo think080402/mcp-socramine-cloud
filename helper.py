@@ -147,8 +147,8 @@ def fetch_all_users(params: dict = {}) -> list:
                         # Korean names: lastname+firstname (no space)
                         user['name'] = f"{lastname}{firstname}"
                     else:
-                        # English/Latin names: firstname lastname (with space)
-                        user['name'] = f"{firstname} {lastname}"
+                        # English/Latin names: lastname firstname (with space)
+                        user['name'] = f"{lastname} {firstname}"
                 else:
                     user['name'] = user.get('login', str(user.get('id', '')))
             total_users.extend(users)
@@ -407,3 +407,170 @@ def compact_issues(issues):
     
     # Ensure Unicode characters are preserved
     return json.loads(json.dumps(result, ensure_ascii=False))
+
+
+def get_all_members_weekly_plan_internal(
+    selected_date: str,
+    include_unagreed: bool = True
+) -> Optional[list]:
+    """Internal helper function for weekly planning across all members."""
+    users = fetch_all_users({'status': 1})  # 1 = active users only
+    if not users:
+        return None
+    
+    date_obj = parse_date(selected_date)
+    week_label, month_label = get_week_and_month_label(date_obj)
+    
+    results = []
+    
+    for user in users:
+        name = user.get('name')
+        member_id = user.get('id')
+        
+        if not name or not member_id:
+            continue
+        
+        params = {
+            'assigned_to_id': member_id,
+            'cf_38': str(date_obj.year),
+            'cf_41': week_label,
+            'cf_42': month_label,
+        }
+        
+        issues = fetch_all_issues(params)
+        
+        agreed_hours = 0.0
+        agreed_pv = 0.0
+        unagreed_hours = 0.0
+        unagreed_pv = 0.0
+        
+        for issue in issues:
+            # Get estimated hours
+            hours = float(issue.get("estimated_hours", 0) or 0)
+            
+            # Get PV from custom fields
+            pv = 0.0
+            for cf in issue.get("custom_fields", []):
+                if cf.get("name") == "PV":
+                    try:
+                        pv = float(cf.get("value", 0) or 0)
+                    except ValueError:
+                        pass
+                    break
+            
+            # Check if agreed (합의필요사항 is empty)
+            is_agreed = True
+            for cf in issue.get("custom_fields", []):
+                if cf.get("name") == "합의필요사항":
+                    if cf.get("value"):
+                        is_agreed = False
+                    break
+            
+            if is_agreed:
+                agreed_hours += hours
+                agreed_pv += pv
+            else:
+                unagreed_hours += hours
+                unagreed_pv += pv
+        
+        if include_unagreed:
+            total_hours = agreed_hours + unagreed_hours
+            total_pv = agreed_pv + unagreed_pv
+        else:
+            total_hours = agreed_hours
+            total_pv = agreed_pv
+        
+        results.append({
+            'name': name,
+            'total_hours': total_hours,
+            'total_pv': total_pv,
+            'agreed_hours': agreed_hours,
+            'agreed_pv': agreed_pv,
+            'unagreed_hours': unagreed_hours,
+            'unagreed_pv': unagreed_pv
+        })
+    
+    return results if results else None
+
+
+def get_all_members_monthly_plan_internal(
+    selected_date: str,
+    include_unagreed: bool = True
+) -> Optional[list]:
+    """Internal helper function for monthly planning across all members."""
+    users = fetch_all_users({'status': 1})  # 1 = active users only
+    if not users:
+        return None
+    
+    date_obj = parse_date(selected_date)
+    week_label, month_label = get_week_and_month_label(date_obj)
+    
+    results = []
+    
+    for user in users:
+        name = user.get('name')
+        member_id = user.get('id')
+        
+        if not name or not member_id:
+            continue
+        
+        params = {
+            'assigned_to_id': member_id,
+            'cf_38': str(date_obj.year),
+            'cf_42': month_label,
+        }
+        
+        issues = fetch_all_issues(params)
+        
+        agreed_hours = 0.0
+        agreed_pv = 0.0
+        unagreed_hours = 0.0
+        unagreed_pv = 0.0
+        
+        for issue in issues:
+            # Get estimated hours
+            hours = float(issue.get("estimated_hours", 0) or 0)
+            
+            # Get PV from custom fields
+            pv = 0.0
+            for cf in issue.get("custom_fields", []):
+                if cf.get("name") == "PV":
+                    try:
+                        pv = float(cf.get("value", 0) or 0)
+                    except ValueError:
+                        pass
+                    break
+            
+            # Check if agreed (합의필요사항 is empty)
+            is_agreed = True
+            for cf in issue.get("custom_fields", []):
+                if cf.get("name") == "합의필요사항":
+                    if cf.get("value"):
+                        is_agreed = False
+                    break
+            
+            if is_agreed:
+                agreed_hours += hours
+                agreed_pv += pv
+            else:
+                unagreed_hours += hours
+                unagreed_pv += pv
+        
+        if include_unagreed:
+            total_hours = agreed_hours + unagreed_hours
+            total_pv = agreed_pv + unagreed_pv
+        else:
+            total_hours = agreed_hours
+            total_pv = agreed_pv
+        
+        results.append({
+            'name': name,
+            'total_hours': total_hours,
+            'total_pv': total_pv,
+            'agreed_hours': agreed_hours,
+            'agreed_pv': agreed_pv,
+            'unagreed_hours': unagreed_hours,
+            'unagreed_pv': unagreed_pv
+        })
+    
+    return results if results else None

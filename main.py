@@ -19,7 +19,9 @@ from helper import (
     get_issue_journals,
     get_issue_children,
     get_issue_parent,
-    get_issue_attachments
+    get_issue_attachments,
+    get_all_members_weekly_plan_internal,
+    get_all_members_monthly_plan_internal
 )
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -1060,7 +1062,7 @@ def get_all_users() -> Optional[list]:
 @mcp.tool()
 def get_all_members_weekly_plan(
     selected_date: str,
-    include_unagreed: bool = False
+    include_unagreed: bool = True
 ) -> Optional[list]:
     """
     Get planned hours and PV for ALL members for a specific week.
@@ -1076,8 +1078,8 @@ def get_all_members_weekly_plan(
     Parameters:
     - selected_date (str): Date in YYYY-MM-DD format to determine which week.
     - include_unagreed (bool): 
-        * False (default): Only count agreed tasks (합의필요사항 is empty)
-        * True: Include both agreed and unagreed tasks
+        * True (default): Include both agreed and unagreed tasks
+        * False: Only count agreed tasks (합의필요사항 is empty)
     
     Returns:
     - list[dict] | None: List of all members with their planning data:
@@ -1094,89 +1096,13 @@ def get_all_members_weekly_plan(
     - get_all_members_weekly_plan(selected_date="2026-01-27", include_unagreed=False)
     - get_all_members_weekly_plan(selected_date="2026-01-27", include_unagreed=True)
     """
-    users = fetch_all_users({'status': 1})  # 1 = active users only
-    if not users:
-        return None
-    
-    date_obj = parse_date(selected_date)
-    week_label, month_label = get_week_and_month_label(date_obj)
-    
-    results = []
-    
-    for user in users:
-        name = user.get('name')
-        member_id = user.get('id')
-        
-        if not name or not member_id:
-            continue
-        
-        params = {
-            'assigned_to_id': member_id,
-            'cf_38': str(date_obj.year),
-            'cf_41': week_label,
-            'cf_42': month_label,
-        }
-        
-        issues = fetch_all_issues(params)
-        
-        agreed_hours = 0.0
-        agreed_pv = 0.0
-        unagreed_hours = 0.0
-        unagreed_pv = 0.0
-        
-        for issue in issues:
-            # Get estimated hours
-            hours = float(issue.get("estimated_hours", 0) or 0)
-            
-            # Get PV from custom fields
-            pv = 0.0
-            for cf in issue.get("custom_fields", []):
-                if cf.get("name") == "PV":
-                    try:
-                        pv = float(cf.get("value", 0) or 0)
-                    except ValueError:
-                        pass
-                    break
-            
-            # Check if agreed (합의필요사항 is empty)
-            is_agreed = True
-            for cf in issue.get("custom_fields", []):
-                if cf.get("name") == "합의필요사항":
-                    if cf.get("value"):
-                        is_agreed = False
-                    break
-            
-            if is_agreed:
-                agreed_hours += hours
-                agreed_pv += pv
-            else:
-                unagreed_hours += hours
-                unagreed_pv += pv
-        
-        if include_unagreed:
-            total_hours = agreed_hours + unagreed_hours
-            total_pv = agreed_pv + unagreed_pv
-        else:
-            total_hours = agreed_hours
-            total_pv = agreed_pv
-        
-        results.append({
-            'name': name,
-            'total_hours': total_hours,
-            'total_pv': total_pv,
-            'agreed_hours': agreed_hours,
-            'agreed_pv': agreed_pv,
-            'unagreed_hours': unagreed_hours,
-            'unagreed_pv': unagreed_pv
-        })
-    
-    return results if results else None
+    return get_all_members_weekly_plan_internal(selected_date, include_unagreed)
 
 
 @mcp.tool()
 def get_all_members_monthly_plan(
     selected_date: str,
-    include_unagreed: bool = False
+    include_unagreed: bool = True
 ) -> Optional[list]:
     """
     Get planned hours and PV for ALL members for a specific month.
@@ -1189,8 +1115,8 @@ def get_all_members_monthly_plan(
     Parameters:
     - selected_date (str): Date in YYYY-MM-DD format to determine which month.
     - include_unagreed (bool): 
-        * False (default): Only count agreed tasks (합의필요사항 is empty)
-        * True: Include both agreed and unagreed tasks
+        * True (default): Include both agreed and unagreed tasks
+        * False: Only count agreed tasks (합의필요사항 is empty)
     
     Returns:
     - list[dict] | None: List of all members with their planning data:
@@ -1207,89 +1133,14 @@ def get_all_members_monthly_plan(
     - get_all_members_monthly_plan(selected_date="2026-02-01", include_unagreed=False)
     - get_all_members_monthly_plan(selected_date="2026-02-15", include_unagreed=True)
     """
-    users = fetch_all_users({'status': 1})  # 1 = active users only
-    if not users:
-        return None
-    
-    date_obj = parse_date(selected_date)
-    week_label, month_label = get_week_and_month_label(date_obj)
-    
-    results = []
-    
-    for user in users:
-        name = user.get('name')
-        member_id = user.get('id')
-        
-        if not name or not member_id:
-            continue
-        
-        params = {
-            'assigned_to_id': member_id,
-            'cf_38': str(date_obj.year),
-            'cf_42': month_label,
-        }
-        
-        issues = fetch_all_issues(params)
-        
-        agreed_hours = 0.0
-        agreed_pv = 0.0
-        unagreed_hours = 0.0
-        unagreed_pv = 0.0
-        
-        for issue in issues:
-            # Get estimated hours
-            hours = float(issue.get("estimated_hours", 0) or 0)
-            
-            # Get PV from custom fields
-            pv = 0.0
-            for cf in issue.get("custom_fields", []):
-                if cf.get("name") == "PV":
-                    try:
-                        pv = float(cf.get("value", 0) or 0)
-                    except ValueError:
-                        pass
-                    break
-            
-            # Check if agreed (합의필요사항 is empty)
-            is_agreed = True
-            for cf in issue.get("custom_fields", []):
-                if cf.get("name") == "합의필요사항":
-                    if cf.get("value"):
-                        is_agreed = False
-                    break
-            
-            if is_agreed:
-                agreed_hours += hours
-                agreed_pv += pv
-            else:
-                unagreed_hours += hours
-                unagreed_pv += pv
-        
-        if include_unagreed:
-            total_hours = agreed_hours + unagreed_hours
-            total_pv = agreed_pv + unagreed_pv
-        else:
-            total_hours = agreed_hours
-            total_pv = agreed_pv
-        
-        results.append({
-            'name': name,
-            'total_hours': total_hours,
-            'total_pv': total_pv,
-            'agreed_hours': agreed_hours,
-            'agreed_pv': agreed_pv,
-            'unagreed_hours': unagreed_hours,
-            'unagreed_pv': unagreed_pv
-        })
-    
-    return results if results else None
+    return get_all_members_monthly_plan_internal(selected_date, include_unagreed)
 
 
 @mcp.tool()
 def get_members_below_weekly_threshold(
     selected_date: str,
     threshold: float = 40.0,
-    include_unagreed: bool = False
+    include_unagreed: bool = True
 ) -> Optional[list]:
     """
     Find members who have less than the threshold hours planned for a specific week.
@@ -1305,8 +1156,8 @@ def get_members_below_weekly_threshold(
     - selected_date (str): Date in YYYY-MM-DD format to determine which week.
     - threshold (float): Minimum hours threshold. Default is 40.0 hours.
     - include_unagreed (bool):
-        * False (default): Only count agreed tasks
-        * True: Include both agreed and unagreed tasks
+        * True (default): Include both agreed and unagreed tasks
+        * False: Only count agreed tasks
     
     Returns:
     - list[dict] | None: List of members below threshold, sorted by hours (lowest first):
@@ -1322,7 +1173,7 @@ def get_members_below_weekly_threshold(
     - get_members_below_weekly_threshold(selected_date="2026-01-27")
     - get_members_below_weekly_threshold(selected_date="2026-01-27", threshold=40.0, include_unagreed=True)
     """
-    all_plans = get_all_members_weekly_plan(selected_date, include_unagreed)
+    all_plans = get_all_members_weekly_plan_internal(selected_date, include_unagreed)
     
     if not all_plans:
         return None
@@ -1350,7 +1201,7 @@ def get_members_below_weekly_threshold(
 def get_members_below_monthly_threshold(
     selected_date: str,
     threshold: float = 160.0,
-    include_unagreed: bool = False
+    include_unagreed: bool = True
 ) -> Optional[list]:
     """
     Find members who have less than the threshold hours planned for a specific month.
@@ -1366,8 +1217,8 @@ def get_members_below_monthly_threshold(
     - selected_date (str): Date in YYYY-MM-DD format to determine which month.
     - threshold (float): Minimum hours threshold. Default is 160.0 hours.
     - include_unagreed (bool):
-        * False (default): Only count agreed tasks
-        * True: Include both agreed and unagreed tasks
+        * True (default): Include both agreed and unagreed tasks
+        * False: Only count agreed tasks
     
     Returns:
     - list[dict] | None: List of members below threshold, sorted by hours (lowest first):
@@ -1383,7 +1234,7 @@ def get_members_below_monthly_threshold(
     - get_members_below_monthly_threshold(selected_date="2026-02-01")
     - get_members_below_monthly_threshold(selected_date="2026-02-15", threshold=160.0, include_unagreed=True)
     """
-    all_plans = get_all_members_monthly_plan(selected_date, include_unagreed)
+    all_plans = get_all_members_monthly_plan_internal(selected_date, include_unagreed)
     
     if not all_plans:
         return None
