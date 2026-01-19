@@ -8,7 +8,7 @@ import re
 
 
 def request(path: str, method: str = 'get', data: Optional[dict] = None, params: Optional[dict] = None,
-            content_type: str = 'application/json', content: Optional[bytes] = None) -> dict:
+            content_type: str = 'application/json', content: Optional[bytes] = None, timeout: float = 120.0) -> dict:
     if data is None:
         data = {}
     if params is None:
@@ -20,7 +20,7 @@ def request(path: str, method: str = 'get', data: Optional[dict] = None, params:
     url = urljoin(os.environ.get('REDMINE_URL', ''), path)
     try:
         response = httpx.request(method=method.lower(), url=url, json=data, params=params, headers=headers,
-                                 content=content, timeout=60.0)
+                                 content=content, timeout=timeout)
         response.raise_for_status()
         body = None
         if response.content:

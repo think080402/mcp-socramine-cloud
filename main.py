@@ -1052,7 +1052,7 @@ def get_all_users() -> Optional[list]:
     - When user asks "show compy hours for all employees", call this first, then iterate through 
       each user calling get_this_year_compy_hour_by_date(name=user['name'], ...) for each one
     """
-    users = fetch_all_users()
+    users = fetch_all_users({'status': 1})  # 1 = active users only
     return users if users else None
 
 
@@ -1094,7 +1094,7 @@ def get_all_members_weekly_plan(
     - get_all_members_weekly_plan(selected_date="2026-01-27", include_unagreed=False)
     - get_all_members_weekly_plan(selected_date="2026-01-27", include_unagreed=True)
     """
-    users = fetch_all_users()
+    users = fetch_all_users({'status': 1})  # 1 = active users only
     if not users:
         return None
     
@@ -1105,13 +1105,9 @@ def get_all_members_weekly_plan(
     
     for user in users:
         name = user.get('name')
-        if not name:
-            continue
-            
-        try:
-            member_id = get_member_id(name, members)
-        except ValueError:
-            # Skip users not in members list
+        member_id = user.get('id')
+        
+        if not name or not member_id:
             continue
         
         params = {
@@ -1211,7 +1207,7 @@ def get_all_members_monthly_plan(
     - get_all_members_monthly_plan(selected_date="2026-02-01", include_unagreed=False)
     - get_all_members_monthly_plan(selected_date="2026-02-15", include_unagreed=True)
     """
-    users = fetch_all_users()
+    users = fetch_all_users({'status': 1})  # 1 = active users only
     if not users:
         return None
     
@@ -1448,7 +1444,7 @@ def get_all_members_weekly_achievement(
     - get_all_members_weekly_achievement(selected_date="2026-01-20", status='완료됨')
     - get_all_members_weekly_achievement(selected_date="2026-01-13", status='검수대기')
     """
-    users = fetch_all_users()
+    users = fetch_all_users({'status': 1})  # 1 = active users only
     if not users:
         return None
     
@@ -1546,7 +1542,7 @@ def get_all_members_monthly_achievement(
     - get_all_members_monthly_achievement(selected_date="2026-01-15", status='완료됨')
     - get_all_members_monthly_achievement(selected_date="2025-12-15", status='검수대기')
     """
-    users = fetch_all_users()
+    users = fetch_all_users({'status': 1})  # 1 = active users only
     if not users:
         return None
     
@@ -1767,7 +1763,7 @@ def get_all_members_ytd_achievement(
     Usage examples:
     - get_all_members_ytd_achievement(current_date="2026-01-19", status='완료됨')
     """
-    users = fetch_all_users()
+    users = fetch_all_users({'status': 1})  # 1 = active users only
     if not users:
         return None
     
