@@ -1924,14 +1924,14 @@ def find_quality_review_removed(
             except:
                 continue
             
-            # Check if 초기계획WBS (cf_49) was changed from 품질검토필요 (1)
+            # Check if 초기계획WBS (cf_49) was changed from 품질검토필요 or 성과검토필요
             for change in journal.get("changes", []):
                 if change.get("property") == "cf" and change.get("name") == "49":  # cf_49 = 초기계획WBS
                     old_val = change.get("old_value")
                     new_val = change.get("new_value")
                     
-                    # Violation: was 품질검토필요 (1), now something else
-                    if old_val == "1" and new_val != "1":
+                    # Violation: was 품질검토필요 or 성과검토필요, now removed/changed
+                    if old_val in ["품질검토필요", "성과검토필요"] and new_val not in ["품질검토필요", "성과검토필요"]:
                         # Get assigned_to info
                         assigned_user = issue.get("assigned_to", {})
                         assigned_name = assigned_user.get("name", "Unassigned") if isinstance(assigned_user, dict) else "Unassigned"
