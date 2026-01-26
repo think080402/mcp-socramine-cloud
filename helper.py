@@ -287,7 +287,7 @@ def get_issue_journals(issue_id: int) -> list:
     for journal in journals:
         entry = {
             "id": journal.get("id"),
-            "user": journal.get("user", {}).get("name"),
+            "user": journal.get("user", {}),  # Keep full user object with id and name
             "created_on": journal.get("created_on"),
             "notes": journal.get("notes"),
             "changes": []

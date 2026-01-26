@@ -1835,11 +1835,15 @@ def find_hours_increased_after_agreement(
                             assigned_user = issue.get("assigned_to", {})
                             assigned_name = assigned_user.get("name", "Unassigned") if isinstance(assigned_user, dict) else "Unassigned"
                             
+                            # Get user info from journal
+                            user_info = journal.get("user", {})
+                            user_name = user_info.get("name", "Unknown") if isinstance(user_info, dict) else str(user_info)
+                            
                             violations.append({
                                 'issue_id': issue_id,
                                 'subject': issue.get("subject"),
                                 'assigned_to': assigned_name,
-                                'increased_by': journal.get("user"),
+                                'increased_by': user_name,
                                 'increased_on': journal_date,
                                 'old_hours': old_hours,
                                 'new_hours': new_hours,
@@ -1932,11 +1936,15 @@ def find_quality_review_removed(
                         assigned_user = issue.get("assigned_to", {})
                         assigned_name = assigned_user.get("name", "Unassigned") if isinstance(assigned_user, dict) else "Unassigned"
                         
+                        # Get user info from journal
+                        user_info = journal.get("user", {})
+                        user_name = user_info.get("name", "Unknown") if isinstance(user_info, dict) else str(user_info)
+                        
                         violations.append({
                             'issue_id': issue_id,
                             'subject': issue.get("subject"),
                             'assigned_to': assigned_name,
-                            'removed_by': journal.get("user"),
+                            'removed_by': user_name,
                             'removed_on': journal_date,
                             'old_value': old_val,
                             'new_value': new_val
@@ -2223,10 +2231,14 @@ def find_sprint_transfers_after_underachievement(
                                 new_week_num = int(new_week.replace("주차", ""))
                                 
                                 if new_week_num < old_week_num:  # Moved backward
+                                    # Get user info from journal
+                                    user_info = journal.get("user", {})
+                                    user_name = user_info.get("name", "Unknown") if isinstance(user_info, dict) else str(user_info)
+                                    
                                     transferred_issues.append({
                                         'issue_id': issue_id,
                                         'subject': issue.get("subject"),
-                                        'transferred_by': journal.get("user"),
+                                        'transferred_by': user_name,
                                         'transferred_on': journal.get("created_on"),
                                         'old_sprint_week': old_week,
                                         'new_sprint_week': new_week
