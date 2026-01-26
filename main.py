@@ -1630,7 +1630,8 @@ def get_members_below_cpi_threshold(
 @mcp.tool()
 def find_agreement_violations_removed(
     start_date: str,
-    end_date: Optional[str] = None
+    end_date: Optional[str] = None,
+    assigned_to: Optional[str] = None
 ) -> Optional[list]:
     """
     Find issues where performance agreement (합의필요사항) was arbitrarily removed.
@@ -1638,25 +1639,33 @@ def find_agreement_violations_removed(
     This detects when someone cleared the '합의필요사항' field after it had content,
     which may indicate improper process bypass.
     
+    Excludes changes made by 박지환(Rex) (user_id=5) as these are authorized.
+    
     Use this when user asks:
     - "성과합의를 임의로 해제한 일감이 있는지" (issues with agreement arbitrarily removed)
+    - "steven task에서 성과합의를 해제한 일감" (Steven's tasks with agreement removed)
     
     Parameters:
     - start_date (str): Start date in YYYY-MM-DD format to check from.
     - end_date (str, optional): End date in YYYY-MM-DD format. If None, checks up to today.
+    - assigned_to (str, optional): Filter by assigned user name (e.g., "Steven"). 
+                                   If None, checks all users' tasks.
     
     Returns:
     - list[dict] | None: List of issues with agreement violations:
       * 'issue_id': Issue ID
       * 'subject': Issue subject
-      * 'removed_by': User who removed the agreement
+      * 'assigned_to': Who the task is assigned to
+      * 'removed_by': User name who removed the agreement
+      * 'removed_by_id': User ID
       * 'removed_on': Date when removed
       * 'old_value': Previous agreement content
       Returns None if no violations found.
     
     Usage examples:
     - find_agreement_violations_removed(start_date="2026-01-01")
-    - find_agreement_violations_removed(start_date="2025-12-01", end_date="2025-12-31")
+    - find_agreement_violations_removed(start_date="2026-01-19", end_date="2026-01-21")
+    - find_agreement_violations_removed(start_date="2026-01-19", end_date="2026-01-21", assigned_to="Steven")
     """
     start_obj = parse_date(start_date)
     end_obj = parse_date(end_date) if end_date else datetime.date.today()
@@ -1668,15 +1677,32 @@ def find_agreement_violations_removed(
     if end_date:
         params['updated_on'] = f'><{start_date}|{end_date}'
     
+    # Filter by assigned user if specified
+    if assigned_to:
+        member_id = get_member_id(assigned_to, members)
+        params['assigned_to_id'] = member_id
+    
     issues = fetch_all_issues(params)
     
+    if not issues:
+        return None
+    
     violations = []
+    AUTHORIZED_USER_ID = 5  # 박지환(Rex) - authorized to modify agreements
     
     for issue in issues:
         issue_id = issue.get("id")
         journals = get_issue_journals(issue_id)
         
+        if not journals:
+            continue
+        
         for journal in journals:
+            # Skip if changed by authorized user (Rex)
+            user_info = journal.get("user", {})
+            if isinstance(user_info, dict) and user_info.get("id") == AUTHORIZED_USER_ID:
+                continue
+            
             journal_date = journal.get("created_on", "")
             if not journal_date:
                 continue
@@ -1697,10 +1723,19 @@ def find_agreement_violations_removed(
                     
                     # Violation: had content, now empty
                     if old_val and not new_val:
+                        user_name = user_info.get("name", "Unknown") if isinstance(user_info, dict) else str(user_info)
+                        user_id = user_info.get("id", None) if isinstance(user_info, dict) else None
+                        
+                        # Get assigned_to info
+                        assigned_user = issue.get("assigned_to", {})
+                        assigned_name = assigned_user.get("name", "Unassigned") if isinstance(assigned_user, dict) else "Unassigned"
+                        
                         violations.append({
                             'issue_id': issue_id,
                             'subject': issue.get("subject"),
-                            'removed_by': journal.get("user"),
+                            'assigned_to': assigned_name,
+                            'removed_by': user_name,
+                            'removed_by_id': user_id,
                             'removed_on': journal_date,
                             'old_value': old_val
                         })
@@ -1711,7 +1746,8 @@ def find_agreement_violations_removed(
 @mcp.tool()
 def find_hours_increased_after_agreement(
     start_date: str,
-    end_date: Optional[str] = None
+    end_date: Optional[str] = None,
+    assigned_to: Optional[str] = None
 ) -> Optional[list]:
     """
     Find issues where estimated hours increased AFTER performance agreement was completed.
@@ -1721,15 +1757,19 @@ def find_hours_increased_after_agreement(
     
     Use this when user asks:
     - "성과합의 이후에 시간이 늘어난 일감이 있는지" (issues with hours increased after agreement)
+    - "steven task에서 성과합의 이후 시간이 늘어난 일감" (Steven's tasks with hours increased after agreement)
     
     Parameters:
     - start_date (str): Start date in YYYY-MM-DD format to check from.
     - end_date (str, optional): End date in YYYY-MM-DD format. If None, checks up to today.
+    - assigned_to (str, optional): Filter by assigned user name (e.g., "Steven").
+                                   If None, checks all users' tasks.
     
     Returns:
     - list[dict] | None: List of issues with hour increase violations:
       * 'issue_id': Issue ID
       * 'subject': Issue subject
+      * 'assigned_to': Who the task is assigned to
       * 'increased_by': User who increased hours
       * 'increased_on': Date when increased
       * 'old_hours': Previous hours
@@ -1739,6 +1779,7 @@ def find_hours_increased_after_agreement(
     
     Usage examples:
     - find_hours_increased_after_agreement(start_date="2026-01-01")
+    - find_hours_increased_after_agreement(start_date="2026-01-19", end_date="2026-01-21", assigned_to="Steven")
     """
     start_obj = parse_date(start_date)
     end_obj = parse_date(end_date) if end_date else datetime.date.today()
@@ -1748,6 +1789,11 @@ def find_hours_increased_after_agreement(
     }
     if end_date:
         params['updated_on'] = f'><{start_date}|{end_date}'
+    
+    # Filter by assigned user if specified
+    if assigned_to:
+        member_id = get_member_id(assigned_to, members)
+        params['assigned_to_id'] = member_id
     
     issues = fetch_all_issues(params)
     
@@ -1785,9 +1831,14 @@ def find_hours_increased_after_agreement(
                     
                     if new_hours > old_hours and agreement_cleared_date and journal_obj > agreement_cleared_date:
                         if start_obj <= journal_obj.date() <= end_obj:
+                            # Get assigned_to info
+                            assigned_user = issue.get("assigned_to", {})
+                            assigned_name = assigned_user.get("name", "Unassigned") if isinstance(assigned_user, dict) else "Unassigned"
+                            
                             violations.append({
                                 'issue_id': issue_id,
                                 'subject': issue.get("subject"),
+                                'assigned_to': assigned_name,
                                 'increased_by': journal.get("user"),
                                 'increased_on': journal_date,
                                 'old_hours': old_hours,
@@ -1801,7 +1852,8 @@ def find_hours_increased_after_agreement(
 @mcp.tool()
 def find_quality_review_removed(
     start_date: str,
-    end_date: Optional[str] = None
+    end_date: Optional[str] = None,
+    assigned_to: Optional[str] = None
 ) -> Optional[list]:
     """
     Find issues where quality review requirement (품질검토필요) was arbitrarily removed.
@@ -1811,15 +1863,19 @@ def find_quality_review_removed(
     
     Use this when user asks:
     - "품질검토필요 값이 임의로 해제된 일감이 있는지" (issues with quality review arbitrarily removed)
+    - "steven task에서 품질검토필요를 해제한 일감" (Steven's tasks with quality review removed)
     
     Parameters:
     - start_date (str): Start date in YYYY-MM-DD format to check from.
     - end_date (str, optional): End date in YYYY-MM-DD format. If None, checks up to today.
+    - assigned_to (str, optional): Filter by assigned user name (e.g., "Steven").
+                                   If None, checks all users' tasks.
     
     Returns:
     - list[dict] | None: List of issues with quality review violations:
       * 'issue_id': Issue ID
       * 'subject': Issue subject
+      * 'assigned_to': Who the task is assigned to
       * 'removed_by': User who removed quality review
       * 'removed_on': Date when removed
       * 'old_value': Previous value (품질검토필요=1)
@@ -1828,6 +1884,7 @@ def find_quality_review_removed(
     
     Usage examples:
     - find_quality_review_removed(start_date="2026-01-01")
+    - find_quality_review_removed(start_date="2026-01-19", end_date="2026-01-21", assigned_to="Steven")
     """
     start_obj = parse_date(start_date)
     end_obj = parse_date(end_date) if end_date else datetime.date.today()
@@ -1837,6 +1894,11 @@ def find_quality_review_removed(
     }
     if end_date:
         params['updated_on'] = f'><{start_date}|{end_date}'
+    
+    # Filter by assigned user if specified
+    if assigned_to:
+        member_id = get_member_id(assigned_to, members)
+        params['assigned_to_id'] = member_id
     
     issues = fetch_all_issues(params)
     
@@ -1866,9 +1928,14 @@ def find_quality_review_removed(
                     
                     # Violation: was 품질검토필요 (1), now something else
                     if old_val == "1" and new_val != "1":
+                        # Get assigned_to info
+                        assigned_user = issue.get("assigned_to", {})
+                        assigned_name = assigned_user.get("name", "Unassigned") if isinstance(assigned_user, dict) else "Unassigned"
+                        
                         violations.append({
                             'issue_id': issue_id,
                             'subject': issue.get("subject"),
+                            'assigned_to': assigned_name,
                             'removed_by': journal.get("user"),
                             'removed_on': journal_date,
                             'old_value': old_val,
@@ -1881,7 +1948,8 @@ def find_quality_review_removed(
 @mcp.tool()
 def find_completed_mng_without_template(
     start_date: str,
-    end_date: Optional[str] = None
+    end_date: Optional[str] = None,
+    assigned_to: Optional[str] = None
 ) -> Optional[list]:
     """
     Find completed management tasks (Mng tracker) that may not have applied standard template.
@@ -1892,10 +1960,13 @@ def find_completed_mng_without_template(
     Use this when user asks:
     - "완료된 관리 일감 중 관리 템플릿을 적용하지 않은 일감" 
       (completed management tasks without template)
+    - "steven task에서 완료된 관리 일감" (Steven's completed management tasks)
     
     Parameters:
     - start_date (str): Start date in YYYY-MM-DD format to check from.
     - end_date (str, optional): End date in YYYY-MM-DD format. If None, checks up to today.
+    - assigned_to (str, optional): Filter by assigned user name (e.g., "Steven").
+                                   If None, checks all users' tasks.
     
     Returns:
     - list[dict] | None: List of completed Mng tasks:
@@ -1909,6 +1980,7 @@ def find_completed_mng_without_template(
     
     Usage examples:
     - find_completed_mng_without_template(start_date="2026-01-01")
+    - find_completed_mng_without_template(start_date="2026-01-19", end_date="2026-01-21", assigned_to="Steven")
     """
     start_obj = parse_date(start_date)
     end_obj = parse_date(end_date) if end_date else datetime.date.today()
@@ -1921,6 +1993,11 @@ def find_completed_mng_without_template(
     }
     if end_date:
         params['updated_on'] = f'><{start_date}|{end_date}'
+    
+    # Filter by assigned user if specified
+    if assigned_to:
+        member_id = get_member_id(assigned_to, members)
+        params['assigned_to_id'] = member_id
     
     issues = fetch_all_issues(params)
     
@@ -1959,7 +2036,8 @@ def find_completed_mng_without_template(
 @mcp.tool()
 def find_completed_tasks_without_attachments(
     start_date: str,
-    end_date: Optional[str] = None
+    end_date: Optional[str] = None,
+    assigned_to: Optional[str] = None
 ) -> Optional[list]:
     """
     Find completed tasks that have no description or notes (deliverables/산출물).
@@ -1970,10 +2048,13 @@ def find_completed_tasks_without_attachments(
     Use this when user asks:
     - "완료된 일감 중 산출물이 등록되지 않은 일감" 
       (completed tasks without deliverables registered)
+    - "steven task에서 산출물이 없는 일감" (Steven's tasks without deliverables)
     
     Parameters:
     - start_date (str): Start date in YYYY-MM-DD format to check from.
     - end_date (str, optional): End date in YYYY-MM-DD format. If None, checks up to today.
+    - assigned_to (str, optional): Filter by assigned user name (e.g., "Steven").
+                                   If None, checks all users' tasks.
     
     Returns:
     - list[dict] | None: List of completed tasks without description or notes:
@@ -1987,6 +2068,7 @@ def find_completed_tasks_without_attachments(
     
     Usage examples:
     - find_completed_tasks_without_attachments(start_date="2026-01-01")
+    - find_completed_tasks_without_attachments(start_date="2026-01-19", end_date="2026-01-21", assigned_to="Steven")
     """
     start_obj = parse_date(start_date)
     end_obj = parse_date(end_date) if end_date else datetime.date.today()
@@ -1998,6 +2080,11 @@ def find_completed_tasks_without_attachments(
     }
     if end_date:
         params['updated_on'] = f'><{start_date}|{end_date}'
+    
+    # Filter by assigned user if specified
+    if assigned_to:
+        member_id = get_member_id(assigned_to, members)
+        params['assigned_to_id'] = member_id
     
     issues = fetch_all_issues(params)
     
