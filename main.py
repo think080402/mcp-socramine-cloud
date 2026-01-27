@@ -2267,14 +2267,14 @@ def find_sprint_transfers_after_underachievement(
                         old_week = change.get("old_value")
                         new_week = change.get("new_value")
                         
-                        # Check if moved to an earlier week (backward transfer)
-                        # Week format is like "1주차", "2주차", etc.
-                        if old_week and new_week:
+                        # Check if moved FROM last week TO an earlier week
+                        # Only flag transfers from the specific week being checked (last_week_date's week)
+                        if old_week and new_week and old_week == week_label:
                             try:
                                 old_week_num = int(old_week.replace("주차", ""))
                                 new_week_num = int(new_week.replace("주차", ""))
                                 
-                                if new_week_num < old_week_num:  # Moved backward
+                                if new_week_num < old_week_num:  # Moved to earlier week
                                     # Get user info from journal
                                     user_info = journal.get("user", {})
                                     user_name = user_info.get("name", "Unknown") if isinstance(user_info, dict) else str(user_info)

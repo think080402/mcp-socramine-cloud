@@ -217,7 +217,8 @@ def get_project_id(project: str) -> str:
 
 def parse_status_param(status: Optional[str], issue_statuses) -> str:
     """
-    Convert a comma-separated status string to a comma-separated status_id string using issue_statuses (case-insensitive).
+    Convert a comma-separated status string to a pipe-separated status_id string using issue_statuses (case-insensitive).
+    Redmine API uses pipe (|) as OR operator for multiple status IDs.
     If status is None, returns '*'.
     """
     if status is None:
@@ -225,31 +226,33 @@ def parse_status_param(status: Optional[str], issue_statuses) -> str:
     status_names = [s.strip().lower() for s in status.split(',')]
     issue_statuses_lower = {k.strip().lower(): v for k, v in issue_statuses.items()}
     status_ids = [str(issue_statuses_lower.get(s, s)) for s in status_names]
-    return ','.join(status_ids)
+    return '|'.join(status_ids)
 
 
 def parse_priority_param(priority: Optional[str], priorities) -> str:
     """
-    Convert a comma-separated priority string to a comma-separated priority_id string using priorities (case-insensitive).
+    Convert a comma-separated priority string to a pipe-separated priority_id string using priorities (case-insensitive).
+    Redmine API uses pipe (|) as OR operator for multiple priority IDs.
     """
     if priority is None:
         return ''
     priority_names = [s.strip().lower() for s in priority.split(',')]
     priorities_lower = {k.strip().lower(): v for k, v in priorities.items()}
     priority_ids = [str(priorities_lower.get(s, s)) for s in priority_names]
-    return ','.join(priority_ids)
+    return '|'.join(priority_ids)
 
 
 def parse_tracker_type_param(tracker_type: Optional[str], tracker_types) -> str:
     """
-    Convert a comma-separated tracker_type string to a comma-separated tracker_type_id string using tracker_types (case-insensitive).
+    Convert a comma-separated tracker_type string to a pipe-separated tracker_type_id string using tracker_types (case-insensitive).
+    Redmine API uses pipe (|) as OR operator for multiple tracker type IDs.
     """
     if tracker_type is None:
         return ''
     tracker_type_names = [s.strip().lower() for s in tracker_type.split(',')]
     tracker_types_lower = {k.strip().lower(): v for k, v in tracker_types.items()}
     tracker_type_ids = [str(tracker_types_lower.get(s, s)) for s in tracker_type_names]
-    return ','.join(tracker_type_ids)
+    return '|'.join(tracker_type_ids)
 
 
 def parse_date(date_str: str) -> datetime.date:
