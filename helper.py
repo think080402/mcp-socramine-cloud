@@ -714,83 +714,6 @@ def get_all_members_weekly_achievement_internal(
     
     return results if results else None
 
-    users = fetch_all_users({'status': 1})  # 1 = active users only
-    if not users:
-        return None
-    
-    date_obj = parse_date(selected_date)
-    week_label, month_label = get_week_and_month_label(date_obj)
-    
-    results = []
-    
-    for user in users:
-        name = user.get('name')
-        member_id = user.get('id')
-        
-        if not name or not member_id:
-            continue
-        
-        params = {
-            'assigned_to_id': member_id,
-            'cf_38': str(date_obj.year),
-            'cf_42': month_label,
-        }
-        
-        issues = fetch_all_issues(params)
-        
-        agreed_hours = 0.0
-        agreed_pv = 0.0
-        unagreed_hours = 0.0
-        unagreed_pv = 0.0
-        
-        for issue in issues:
-            # Get estimated hours
-            hours = float(issue.get("estimated_hours", 0) or 0)
-            
-            # Get PV from custom fields
-            pv = 0.0
-            for cf in issue.get("custom_fields", []):
-                if cf.get("name") == "PV":
-                    try:
-                        pv = float(cf.get("value", 0) or 0)
-                    except ValueError:
-                        pass
-                    break
-            
-            # Check if agreed (합의필요사항 is empty)
-            is_agreed = True
-            for cf in issue.get("custom_fields", []):
-                if cf.get("name") == "합의필요사항":
-                    if cf.get("value"):
-                        is_agreed = False
-                    break
-            
-            if is_agreed:
-                agreed_hours += hours
-                agreed_pv += pv
-            else:
-                unagreed_hours += hours
-                unagreed_pv += pv
-        
-        if include_unagreed:
-            total_hours = agreed_hours + unagreed_hours
-            total_pv = agreed_pv + unagreed_pv
-        else:
-            total_hours = agreed_hours
-            total_pv = agreed_pv
-        
-        results.append({
-            'name': name,
-            'total_hours': total_hours,
-            'total_pv': total_pv,
-            'agreed_hours': agreed_hours,
-            'agreed_pv': agreed_pv,
-            'unagreed_hours': unagreed_hours,
-            'unagreed_pv': unagreed_pv
-        })
-    
-    return results if results else None
-
 
 def get_all_members_ytd_achievement_internal(
     current_date: str,
@@ -874,122 +797,17 @@ def get_all_members_ytd_achievement_internal(
 def get_members_below_weekly_achievement_threshold_internal(
     selected_date: str,
     threshold: float,
-    status: str,
-    issue_statuses: dict
+    status: str = '검수대기,승인대기,완료요청,완료됨',
+    issue_statuses: dict = None
 ) -> Optional[list]:
-    """Internal helper for finding members below weekly achievement threshold."""
-    all_achievements = get_all_members_weekly_achievement_internal(selected_date, status, issue_statuses)
+    """Internal helper for finding members below weekly achievement threshold.
     
-    if not all_achievements:
-        return None
+    By default, considers all achievement statuses: 검수대기, 승인대기, 완료요청, 완료됨
+    """
+    if issue_statuses is None:
+        from main import issue_statuses as default_statuses
+        issue_statuses = default_statuses
     
-    below_threshold = []
-    
-    for member in all_achievements:
-        if member['hours'] < threshold:
-            below_threshold.append({
-                'name': member['name'],
-                'member_id': member['member_id'],
-                'hours': member['hours'],
-                'ev': member['ev'],
-                'pv': member['pv'],
-                'cpi': member['cpi'],
-                'shortfall': threshold - member['hours']
-            })
-    
-    # Sort by hours (lowest first)
-    below_threshold.sort(key=lambda x: x['hours'])
-    
-    return below_threshold if below_threshold else None
-
-
-def get_all_members_ytd_achievement_internal(
-    current_date: str,
-    status: str,
-    issue_statuses: dict
-) -> Optional[list]:
-    """Internal helper function for YTD achievement across all members."""
-    import datetime
-    
-    users = fetch_all_users({'status': 1})  # 1 = active users only
-    if not users:
-        return None
-    
-    status_id = parse_status_param(status, issue_statuses)
-    date_obj = parse_date(current_date)
-    year = date_obj.year
-    
-    # Calculate how many weeks have elapsed in the year
-    # Assuming standard work year: 40 hours/week target
-    year_start = datetime.date(year, 1, 1)
-    days_elapsed = (date_obj - year_start).days + 1
-    weeks_elapsed = days_elapsed / 7.0
-    target_hours = weeks_elapsed * 40.0  # 40 hours per week target
-    
-    results = []
-    
-    for user in users:
-        name = user.get('name')
-        member_id = user.get('id')
-        
-        if not name or not member_id:
-            continue
-        
-        # Fetch all issues for the year with the specified status
-        params = {
-            'assigned_to_id': member_id,
-            'status_id': status_id,
-            'cf_38': str(year),
-        }
-        
-        issues = fetch_all_issues(params)
-        
-        ytd_hours = 0.0
-        ytd_pv = 0.0
-        ytd_ev = 0.0
-        
-        for issue in issues:
-            # Get estimated hours
-            hours = float(issue.get("estimated_hours", 0) or 0)
-            ytd_hours += hours
-            
-            # Get PV and EV from custom fields
-            for cf in issue.get("custom_fields", []):
-                if cf.get("name") == "PV":
-                    try:
-                        ytd_pv += float(cf.get("value", 0) or 0)
-                    except ValueError:
-                        pass
-                elif cf.get("name") == "EV":
-                    try:
-                        ytd_ev += float(cf.get("value", 0) or 0)
-                    except ValueError:
-                        pass
-        
-        # Calculate YTD CPI
-        ytd_cpi = ytd_ev / ytd_pv if ytd_pv > 0 else 0.0
-        
-        results.append({
-            'name': name,
-            'member_id': member_id,
-            'ytd_hours': ytd_hours,
-            'ytd_pv': ytd_pv,
-            'ytd_ev': ytd_ev,
-            'ytd_cpi': ytd_cpi,
-            'target_hours': target_hours,
-            'hours_vs_target': ytd_hours - target_hours
-        })
-    
-    return results if results else None
-
-
-def get_members_below_weekly_achievement_threshold_internal(
-    selected_date: str,
-    threshold: float,
-    status: str,
-    issue_statuses: dict
-) -> Optional[list]:
-    """Internal helper for finding members below weekly achievement threshold."""
     all_achievements = get_all_members_weekly_achievement_internal(selected_date, status, issue_statuses)
     
     if not all_achievements:

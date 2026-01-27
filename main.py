@@ -2149,7 +2149,8 @@ def find_completed_tasks_without_attachments(
 @mcp.tool()
 def find_sprint_transfers_after_underachievement(
     last_week_date: str,
-    threshold: float = 40.0
+    threshold: float = 40.0,
+    assigned_to: Optional[str] = None
 ) -> Optional[list]:
     """
     Find people who transferred last week's tasks to an earlier week after not achieving 40h.
@@ -2160,10 +2161,13 @@ def find_sprint_transfers_after_underachievement(
     Use this when user asks:
     - "지난 주 일감이 40시간 달성이 안된 상태에서, 이전 주로 이관된 사람의 스프린트" 
       (people who transferred to previous week after not achieving 40h last week)
+    - "steven의 지난 주 일감이 이전 주로 이관된 것" (Steven's tasks transferred to previous week)
     
     Parameters:
     - last_week_date (str): Date in YYYY-MM-DD format within last week to check.
     - threshold (float): Hour achievement threshold. Default is 40.0 hours.
+    - assigned_to (str, optional): Filter by assigned user name (e.g., "Steven").
+                                   If None, checks all users who didn't meet threshold.
     
     Returns:
     - list[dict] | None: List of people with sprint transfer violations:
@@ -2180,20 +2184,60 @@ def find_sprint_transfers_after_underachievement(
     
     Usage examples:
     - find_sprint_transfers_after_underachievement(last_week_date="2026-01-13")
+    - find_sprint_transfers_after_underachievement(last_week_date="2026-01-13", assigned_to="Steven")
     """
-    # First, get who didn't achieve threshold last week
-    under_achievers = get_members_below_weekly_achievement_threshold_internal(
-        selected_date=last_week_date,
-        threshold=threshold,
-        status='완료됨',
-        issue_statuses=issue_statuses
-    )
-    
-    if not under_achievers:
-        return None
-    
     date_obj = parse_date(last_week_date)
     week_label, month_label = get_week_and_month_label(date_obj)
+    status_id = parse_status_param('검수대기,승인대기,완료요청,완료됨', issue_statuses)
+    
+    # If specific user requested, check only that user
+    if assigned_to:
+        member_id = get_member_id(assigned_to, members)
+        
+        # Fetch issues for this specific member for the week
+        params = {
+            'assigned_to_id': member_id,
+            'status_id': status_id,
+            'cf_38': str(date_obj.year),
+            'cf_41': week_label,
+            'cf_42': month_label,
+        }
+        
+        issues = fetch_all_issues(params)
+        
+        # Calculate achievement hours
+        total_hours = 0.0
+        for issue in issues:
+            hours = float(issue.get("estimated_hours", 0) or 0)
+            total_hours += hours
+        
+        if total_hours >= threshold:
+            return None  # This member met the threshold
+        
+        # Get user info
+        users = fetch_all_users({'status': 1})
+        member_name = assigned_to
+        for user in users:
+            if user.get('id') == member_id:
+                member_name = user.get('name', assigned_to)
+                break
+        
+        under_achievers = [{
+            'name': member_name,
+            'member_id': member_id,
+            'hours': total_hours
+        }]
+    else:
+        # Get all members who didn't achieve threshold
+        under_achievers = get_members_below_weekly_achievement_threshold_internal(
+            selected_date=last_week_date,
+            threshold=threshold,
+            status='검수대기,승인대기,완료요청,완료됨',
+            issue_statuses=issue_statuses
+        )
+        
+        if not under_achievers:
+            return None
     
     violations = []
     
