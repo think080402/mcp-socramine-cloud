@@ -1690,12 +1690,14 @@ def find_agreement_violations_removed(
     violations = []
     AUTHORIZED_USER_ID = 5  # 박지환(Rex) - authorized to modify agreements
     
-    for issue in issues:
+    # Helper function to process a single issue
+    def process_issue(issue):
+        local_violations = []
         issue_id = issue.get("id")
         journals = get_issue_journals(issue_id)
         
         if not journals:
-            continue
+            return local_violations
         
         for journal in journals:
             # Skip if changed by authorized user (Rex)
@@ -1730,7 +1732,7 @@ def find_agreement_violations_removed(
                         assigned_user = issue.get("assigned_to", {})
                         assigned_name = assigned_user.get("name", "Unassigned") if isinstance(assigned_user, dict) else "Unassigned"
                         
-                        violations.append({
+                        local_violations.append({
                             'issue_id': issue_id,
                             'subject': issue.get("subject"),
                             'assigned_to': assigned_name,
@@ -1739,6 +1741,24 @@ def find_agreement_violations_removed(
                             'removed_on': journal_date,
                             'old_value': old_val
                         })
+        
+        return local_violations
+    
+    # Use ThreadPoolExecutor to process issues in parallel
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    
+    with ThreadPoolExecutor(max_workers=100) as executor:
+        # Submit all issues for processing
+        futures = {executor.submit(process_issue, issue): issue for issue in issues}
+        
+        # Collect results as they complete
+        for future in as_completed(futures):
+            try:
+                issue_violations = future.result()
+                violations.extend(issue_violations)
+            except Exception as e:
+                # Log error but continue processing other issues
+                pass
     
     return violations if violations else None
 
@@ -2262,33 +2282,44 @@ def find_sprint_transfers_after_underachievement(
             
             for journal in journals:
                 # Check if 스프린트(주) (cf_41) was changed
+                # Also need to verify the month to ensure it's from the correct week+month combination
+                old_week = None
+                new_week = None
+                old_month = None
+                new_month = None
+                
                 for change in journal.get("changes", []):
                     if change.get("property") == "cf" and change.get("name") == "41":  # cf_41 = 스프린트(주)
                         old_week = change.get("old_value")
                         new_week = change.get("new_value")
+                    elif change.get("property") == "cf" and change.get("name") == "42":  # cf_42 = 스프린트(월)
+                        old_month = change.get("old_value")
+                        new_month = change.get("new_value")
+                
+                # Check if moved FROM last week (and correct month) TO an earlier week
+                # Only flag transfers from the specific week AND month being checked
+                if old_week and new_week and old_week == week_label and (old_month == month_label or old_month is None):
+                    try:
+                        old_week_num = int(old_week.replace("주차", ""))
+                        new_week_num = int(new_week.replace("주차", ""))
                         
-                        # Check if moved FROM last week TO an earlier week
-                        # Only flag transfers from the specific week being checked (last_week_date's week)
-                        if old_week and new_week and old_week == week_label:
-                            try:
-                                old_week_num = int(old_week.replace("주차", ""))
-                                new_week_num = int(new_week.replace("주차", ""))
-                                
-                                if new_week_num < old_week_num:  # Moved to earlier week
-                                    # Get user info from journal
-                                    user_info = journal.get("user", {})
-                                    user_name = user_info.get("name", "Unknown") if isinstance(user_info, dict) else str(user_info)
-                                    
-                                    transferred_issues.append({
-                                        'issue_id': issue_id,
-                                        'subject': issue.get("subject"),
-                                        'transferred_by': user_name,
-                                        'transferred_on': journal.get("created_on"),
-                                        'old_sprint_week': old_week,
-                                        'new_sprint_week': new_week
-                                    })
-                            except:
-                                pass
+                        if new_week_num < old_week_num:  # Moved to earlier week
+                            # Get user info from journal
+                            user_info = journal.get("user", {})
+                            user_name = user_info.get("name", "Unknown") if isinstance(user_info, dict) else str(user_info)
+                            
+                            transferred_issues.append({
+                                'issue_id': issue_id,
+                                'subject': issue.get("subject"),
+                                'transferred_by': user_name,
+                                'transferred_on': journal.get("created_on"),
+                                'old_sprint_week': old_week,
+                                'new_sprint_week': new_week,
+                                'old_sprint_month': old_month if old_month else month_label,
+                                'new_sprint_month': new_month if new_month else "(unchanged)"
+                            })
+                    except:
+                        pass
         
         if transferred_issues:
             violations.append({
