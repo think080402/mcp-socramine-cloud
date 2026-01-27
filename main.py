@@ -1690,14 +1690,12 @@ def find_agreement_violations_removed(
     violations = []
     AUTHORIZED_USER_ID = 5  # 박지환(Rex) - authorized to modify agreements
     
-    # Helper function to process a single issue
-    def process_issue(issue):
-        local_violations = []
+    for issue in issues:
         issue_id = issue.get("id")
         journals = get_issue_journals(issue_id)
         
         if not journals:
-            return local_violations
+            continue
         
         for journal in journals:
             # Skip if changed by authorized user (Rex)
@@ -1732,7 +1730,7 @@ def find_agreement_violations_removed(
                         assigned_user = issue.get("assigned_to", {})
                         assigned_name = assigned_user.get("name", "Unassigned") if isinstance(assigned_user, dict) else "Unassigned"
                         
-                        local_violations.append({
+                        violations.append({
                             'issue_id': issue_id,
                             'subject': issue.get("subject"),
                             'assigned_to': assigned_name,
@@ -1741,24 +1739,6 @@ def find_agreement_violations_removed(
                             'removed_on': journal_date,
                             'old_value': old_val
                         })
-        
-        return local_violations
-    
-    # Use ThreadPoolExecutor to process issues in parallel
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    
-    with ThreadPoolExecutor(max_workers=100) as executor:
-        # Submit all issues for processing
-        futures = {executor.submit(process_issue, issue): issue for issue in issues}
-        
-        # Collect results as they complete
-        for future in as_completed(futures):
-            try:
-                issue_violations = future.result()
-                violations.extend(issue_violations)
-            except Exception as e:
-                # Log error but continue processing other issues
-                pass
     
     return violations if violations else None
 
