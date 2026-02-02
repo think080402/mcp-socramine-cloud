@@ -834,3 +834,159 @@ def get_members_below_weekly_achievement_threshold_internal(
     below_threshold.sort(key=lambda x: x['hours'])
     
     return below_threshold if below_threshold else None
+
+
+def calculate_text_similarity(text1: str, text2: str) -> float:
+    """
+    Calculate similarity between two text strings using a simple token-based approach.
+    Returns a similarity score between 0.0 (completely different) and 1.0 (identical).
+    
+    Uses Jaccard similarity on word tokens.
+    """
+    if not text1 or not text2:
+        return 0.0
+    
+    # Normalize and tokenize
+    def tokenize(text):
+        # Convert to lowercase and split into words
+        # Remove common punctuation
+        import re
+        text = text.lower()
+        text = re.sub(r'[^\w\s가-힣]', ' ', text)  # Keep Korean characters
+        tokens = set(text.split())
+        return tokens
+    
+    tokens1 = tokenize(text1)
+    tokens2 = tokenize(text2)
+    
+    if not tokens1 or not tokens2:
+        return 0.0
+    
+    # Jaccard similarity: intersection / union
+    intersection = len(tokens1 & tokens2)
+    union = len(tokens1 | tokens2)
+    
+    return intersection / union if union > 0 else 0.0
+
+
+def find_duplicate_issues_internal(
+    assigned_to_id: Optional[str] = None,
+    year: Optional[int] = None,
+    similarity_threshold: float = 0.6,
+    check_same_person: bool = True
+) -> Optional[list]:
+    """
+    Internal helper to find duplicate issues based on subject similarity.
+    
+    Parameters:
+    - assigned_to_id: If provided, only check issues for this user (same person duplicates)
+    - year: Year to filter issues (optional)
+    - similarity_threshold: Minimum similarity score to consider as duplicate (0.0-1.0)
+    - check_same_person: If True, only find duplicates within same assignee
+    
+    Returns list of duplicate groups with similarity scores.
+    """
+    import datetime
+    
+    # Build query parameters
+    params = {}
+    if assigned_to_id:
+        params['assigned_to_id'] = assigned_to_id
+    if year:
+        params['cf_38'] = str(year)
+    else:
+        params['cf_38'] = str(datetime.datetime.now().year)
+    
+    # Fetch all issues
+    issues = fetch_all_issues(params)
+    
+    if not issues or len(issues) < 2:
+        return None
+    
+    # Find duplicates
+    duplicates = []
+    checked_pairs = set()
+    
+    for i, issue1 in enumerate(issues):
+        for j, issue2 in enumerate(issues):
+            if i >= j:  # Skip same issue and already checked pairs
+                continue
+            
+            # Create a unique pair identifier
+            pair_id = tuple(sorted([issue1.get('id'), issue2.get('id')]))
+            if pair_id in checked_pairs:
+                continue
+            checked_pairs.add(pair_id)
+            
+            # If checking same person, skip if different assignees
+            if check_same_person:
+                assignee1_id = issue1.get('assigned_to', {}).get('id') if issue1.get('assigned_to') else None
+                assignee2_id = issue2.get('assigned_to', {}).get('id') if issue2.get('assigned_to') else None
+                if assignee1_id != assignee2_id:
+                    continue
+            
+            # Calculate similarity
+            subject1 = issue1.get('subject', '')
+            subject2 = issue2.get('subject', '')
+            
+            similarity = calculate_text_similarity(subject1, subject2)
+            
+            if similarity >= similarity_threshold:
+                # Check additional factors
+                same_project = issue1.get('project', {}).get('id') == issue2.get('project', {}).get('id')
+                same_tracker = issue1.get('tracker', {}).get('id') == issue2.get('tracker', {}).get('id')
+                
+                # Get date overlap info
+                start1 = issue1.get('start_date')
+                start2 = issue2.get('start_date')
+                due1 = issue1.get('due_date')
+                due2 = issue2.get('due_date')
+                
+                date_overlap = False
+                if start1 and start2 and due1 and due2:
+                    try:
+                        s1 = datetime.datetime.strptime(start1, '%Y-%m-%d').date()
+                        s2 = datetime.datetime.strptime(start2, '%Y-%m-%d').date()
+                        d1 = datetime.datetime.strptime(due1, '%Y-%m-%d').date()
+                        d2 = datetime.datetime.strptime(due2, '%Y-%m-%d').date()
+                        
+                        # Check if date ranges overlap
+                        date_overlap = not (d1 < s2 or d2 < s1)
+                    except:
+                        pass
+                
+                assignee1 = issue1.get('assigned_to', {}).get('name', 'Unassigned')
+                assignee2 = issue2.get('assigned_to', {}).get('name', 'Unassigned')
+                
+                duplicates.append({
+                    'issue1_id': issue1.get('id'),
+                    'issue1_subject': subject1,
+                    'issue1_assigned_to': assignee1,
+                    'issue1_project': issue1.get('project', {}).get('name'),
+                    'issue1_tracker': issue1.get('tracker', {}).get('name'),
+                    'issue1_status': issue1.get('status', {}).get('name'),
+                    'issue1_start_date': start1,
+                    'issue1_due_date': due1,
+                    'issue1_hours': issue1.get('estimated_hours'),
+                    'issue2_id': issue2.get('id'),
+                    'issue2_subject': subject2,
+                    'issue2_assigned_to': assignee2,
+                    'issue2_project': issue2.get('project', {}).get('name'),
+                    'issue2_tracker': issue2.get('tracker', {}).get('name'),
+                    'issue2_status': issue2.get('status', {}).get('name'),
+                    'issue2_start_date': start2,
+                    'issue2_due_date': due2,
+                    'issue2_hours': issue2.get('estimated_hours'),
+                    'similarity_score': round(similarity, 3),
+                    'same_project': same_project,
+                    'same_tracker': same_tracker,
+                    'date_overlap': date_overlap,
+                    'same_person': assignee1 == assignee2
+                })
+    
+    # Sort by similarity score (highest first)
+    if duplicates:
+        duplicates.sort(key=lambda x: x['similarity_score'], reverse=True)
+        return duplicates
+    
+    return None

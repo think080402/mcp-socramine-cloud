@@ -25,7 +25,8 @@ from helper import (
     get_all_members_monthly_achievement_internal,
     get_all_members_weekly_achievement_internal,
     get_all_members_ytd_achievement_internal,
-    get_members_below_weekly_achievement_threshold_internal
+    get_members_below_weekly_achievement_threshold_internal,
+    find_duplicate_issues_internal
 )
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -2309,6 +2310,132 @@ def find_sprint_transfers_after_underachievement(
             })
     
     return violations if violations else None
+
+
+# Duplicate Issue Detection
+@mcp.tool()
+def find_duplicate_issues(
+    name: str,
+    year: Optional[int] = None,
+    similarity_threshold: float = 0.6
+) -> Optional[list]:
+    """
+    Find duplicate issues for a specific person based on subject similarity.
+    
+    This detects when the same person has multiple similar issues that might be duplicates.
+    Uses text similarity analysis on issue subjects to identify potential duplicates.
+    
+    Use this when user asks:
+    - "사람이 같은 경우에 중복된 업무" (duplicate tasks for the same person)
+    - "Steven의 중복 일감 찾기" (find Steven's duplicate issues)
+    - "같은 사람에게 할당된 유사한 일감" (similar issues assigned to same person)
+    
+    Parameters:
+    - name (str): Member name to check for duplicates (required).
+    - year (int, optional): Year to filter issues. If None, uses current year.
+    - similarity_threshold (float): Minimum similarity score (0.0-1.0) to consider as duplicate.
+      Default is 0.6 (60% similar). Higher values = stricter matching.
+    
+    Returns:
+    - list[dict] | None: List of duplicate issue pairs, sorted by similarity score:
+      * 'issue1_id': First issue ID
+      * 'issue1_subject': First issue subject
+      * 'issue1_assigned_to': Person assigned (same for both)
+      * 'issue1_project': Project name
+      * 'issue1_tracker': Tracker type
+      * 'issue1_status': Current status
+      * 'issue1_start_date': Start date
+      * 'issue1_due_date': Due date
+      * 'issue1_hours': Estimated hours
+      * 'issue2_id': Second issue ID
+      * 'issue2_subject': Second issue subject
+      * 'issue2_assigned_to': Person assigned (same for both)
+      * 'issue2_project': Project name
+      * 'issue2_tracker': Tracker type
+      * 'issue2_status': Current status
+      * 'issue2_start_date': Start date
+      * 'issue2_due_date': Due date
+      * 'issue2_hours': Estimated hours
+      * 'similarity_score': Similarity score (0.0-1.0)
+      * 'same_project': Boolean - are they in the same project?
+      * 'same_tracker': Boolean - are they the same tracker type?
+      * 'date_overlap': Boolean - do their date ranges overlap?
+      * 'same_person': Boolean - always true for this tool
+      Returns None if no duplicates found.
+    
+    Usage examples:
+    - find_duplicate_issues(name="Steven")
+    - find_duplicate_issues(name="Alice", year=2026, similarity_threshold=0.7)
+    """
+    member_id = get_member_id(name, members)
+    
+    return find_duplicate_issues_internal(
+        assigned_to_id=member_id,
+        year=year,
+        similarity_threshold=similarity_threshold,
+        check_same_person=True
+    )
+
+
+@mcp.tool()
+def find_duplicate_issues_across_users(
+    year: Optional[int] = None,
+    similarity_threshold: float = 0.7
+) -> Optional[list]:
+    """
+    Find duplicate issues across different people based on subject similarity.
+    
+    This detects when different people have similar issues that might be duplicates
+    or overlapping work. Uses text similarity analysis on issue subjects.
+    
+    Use this when user asks:
+    - "사람이 다른 경우에 중복된 업무" (duplicate tasks for different people)
+    - "서로 다른 사람에게 할당된 유사한 일감" (similar issues assigned to different people)
+    - "팀 전체의 중복 업무 찾기" (find duplicate work across the team)
+    
+    Parameters:
+    - year (int, optional): Year to filter issues. If None, uses current year.
+    - similarity_threshold (float): Minimum similarity score (0.0-1.0) to consider as duplicate.
+      Default is 0.7 (70% similar). Higher threshold recommended for cross-person duplicates
+      to reduce false positives.
+    
+    Returns:
+    - list[dict] | None: List of duplicate issue pairs across different people:
+      * 'issue1_id': First issue ID
+      * 'issue1_subject': First issue subject
+      * 'issue1_assigned_to': Person assigned to first issue
+      * 'issue1_project': Project name
+      * 'issue1_tracker': Tracker type
+      * 'issue1_status': Current status
+      * 'issue1_start_date': Start date
+      * 'issue1_due_date': Due date
+      * 'issue1_hours': Estimated hours
+      * 'issue2_id': Second issue ID
+      * 'issue2_subject': Second issue subject
+      * 'issue2_assigned_to': Person assigned to second issue (different from first)
+      * 'issue2_project': Project name
+      * 'issue2_tracker': Tracker type
+      * 'issue2_status': Current status
+      * 'issue2_start_date': Start date
+      * 'issue2_due_date': Due date
+      * 'issue2_hours': Estimated hours
+      * 'similarity_score': Similarity score (0.0-1.0)
+      * 'same_project': Boolean - are they in the same project?
+      * 'same_tracker': Boolean - are they the same tracker type?
+      * 'date_overlap': Boolean - do their date ranges overlap?
+      * 'same_person': Boolean - always false for this tool
+      Returns None if no duplicates found.
+    
+    Usage examples:
+    - find_duplicate_issues_across_users()
+    - find_duplicate_issues_across_users(year=2026, similarity_threshold=0.8)
+    """
+    return find_duplicate_issues_internal(
+        assigned_to_id=None,
+        year=year,
+        similarity_threshold=similarity_threshold,
+        check_same_person=False
+    )
 
 
 def main():
