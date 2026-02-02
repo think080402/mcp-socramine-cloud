@@ -26,7 +26,8 @@ from helper import (
     get_all_members_weekly_achievement_internal,
     get_all_members_ytd_achievement_internal,
     get_members_below_weekly_achievement_threshold_internal,
-    find_duplicate_issues_internal
+    find_duplicate_issues_internal,
+    find_performance_outliers_internal
 )
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -2310,6 +2311,64 @@ def find_sprint_transfers_after_underachievement(
             })
     
     return violations if violations else None
+
+
+# Consistency Violation Detection
+@mcp.tool()
+def find_performance_outliers(
+    tracker_type: Optional[str] = None,
+    year: Optional[int] = None,
+    status: str = '완료됨'
+) -> Optional[list]:
+    """
+    Find performance outliers - tasks with significantly different performance metrics.
+    
+    This detects consistency violations where similar tasks (same tracker type) have
+    very different performance characteristics (EV/hour ratios). Uses statistical
+    analysis to identify outliers that deviate significantly from the group average.
+    
+    Use this when user asks:
+    - "같은 유형의 일감의 성과 차이가 큰 경우" (tasks of same type with large performance differences)
+    - "일관성 위반 식별" (identify consistency violations)
+    - "성과가 비정상적인 일감 찾기" (find tasks with abnormal performance)
+    
+    Parameters:
+    - tracker_type (str, optional): Filter by specific tracker type (e.g., "Bug", "Feature").
+      If None, analyzes all tracker types separately.
+    - year (int, optional): Year to filter issues. If None, uses current year.
+    - status (str): Status filter. Default is '완료됨' (completed tasks).
+      Can also use '검수대기', '승인대기', etc.
+    
+    Returns:
+    - list[dict] | None: List of outlier issues sorted by deviation (z-score):
+      * 'issue_id': Issue ID
+      * 'subject': Issue subject
+      * 'tracker': Tracker type
+      * 'assigned_to': Person assigned
+      * 'project': Project name
+      * 'status': Current status
+      * 'hours': Estimated hours
+      * 'ev': Earned Value
+      * 'pv': Planned Value
+      * 'ev_per_hour': EV per hour ratio (efficiency metric)
+      * 'cpi': Cost Performance Index (EV/PV)
+      * 'group_mean_ev_per_hour': Average EV/hour for this tracker type
+      * 'deviation_from_mean': How far from average
+      * 'z_score': Statistical z-score (>2 = significant outlier)
+      * 'performance_type': 'high' (over-performing) or 'low' (under-performing)
+      Returns None if no outliers found or insufficient data.
+    
+    Usage examples:
+    - find_performance_outliers()  # Check all tracker types
+    - find_performance_outliers(tracker_type="Bug", year=2026)
+    - find_performance_outliers(tracker_type="Feature", status='완료됨')
+    """
+    return find_performance_outliers_internal(
+        tracker_type=tracker_type,
+        year=year,
+        status=status,
+        issue_statuses=issue_statuses
+    )
 
 
 # Duplicate Issue Detection

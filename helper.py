@@ -990,3 +990,150 @@ def find_duplicate_issues_internal(
         return duplicates
     
     return None
+
+
+def find_performance_outliers_internal(
+    tracker_type: Optional[str] = None,
+    year: Optional[int] = None,
+    status: str = '완료됨',
+    issue_statuses: dict = None
+) -> Optional[list]:
+    """
+    Internal helper to find performance outliers (consistency violations).
+    
+    Identifies issues of the same type with significantly different performance metrics.
+    Uses statistical analysis to detect outliers in EV/hour ratios.
+    
+    Parameters:
+    - tracker_type: Filter by tracker type (optional)
+    - year: Year to filter issues (optional)
+    - status: Status filter (default: '완료됨')
+    - issue_statuses: Status mapping dictionary
+    
+    Returns list of outlier issues with performance metrics.
+    """
+    import datetime
+    
+    if issue_statuses is None:
+        from main import issue_statuses as default_statuses
+        issue_statuses = default_statuses
+    
+    # Build query parameters
+    params = {}
+    if year:
+        params['cf_38'] = str(year)
+    else:
+        params['cf_38'] = str(datetime.datetime.now().year)
+    
+    # Filter by status
+    status_id = parse_status_param(status, issue_statuses)
+    if status_id:
+        params['status_id'] = status_id
+    
+    # Filter by tracker type if specified
+    if tracker_type:
+        from main import tracker_types
+        tracker_type_lower = {k.strip().lower(): v for k, v in tracker_types.items()}
+        tracker_id = tracker_type_lower.get(tracker_type.strip().lower())
+        if tracker_id:
+            params['tracker_id'] = str(tracker_id)
+    
+    # Fetch all issues
+    issues = fetch_all_issues(params)
+    
+    if not issues or len(issues) < 3:  # Need at least 3 issues for statistical analysis
+        return None
+    
+    # Group issues by tracker type
+    tracker_groups = {}
+    for issue in issues:
+        tracker_name = issue.get('tracker', {}).get('name', 'Unknown')
+        if tracker_name not in tracker_groups:
+            tracker_groups[tracker_name] = []
+        tracker_groups[tracker_name].append(issue)
+    
+    outliers = []
+    
+    for tracker_name, tracker_issues in tracker_groups.items():
+        if len(tracker_issues) < 3:  # Need at least 3 for comparison
+            continue
+        
+        # Calculate performance metrics for each issue
+        metrics = []
+        for issue in tracker_issues:
+            hours = float(issue.get('estimated_hours', 0) or 0)
+            
+            # Get EV and PV from custom fields
+            ev = 0.0
+            pv = 0.0
+            for cf in issue.get('custom_fields', []):
+                if cf.get('name') == 'EV':
+                    try:
+                        ev = float(cf.get('value', 0) or 0)
+                    except ValueError:
+                        pass
+                elif cf.get('name') == 'PV':
+                    try:
+                        pv = float(cf.get('value', 0) or 0)
+                    except ValueError:
+                        pass
+            
+            # Calculate efficiency metrics
+            ev_per_hour = ev / hours if hours > 0 else 0
+            cpi = ev / pv if pv > 0 else 0
+            
+            metrics.append({
+                'issue': issue,
+                'hours': hours,
+                'ev': ev,
+                'pv': pv,
+                'ev_per_hour': ev_per_hour,
+                'cpi': cpi
+            })
+        
+        # Calculate statistics for EV per hour
+        ev_per_hour_values = [m['ev_per_hour'] for m in metrics if m['ev_per_hour'] > 0]
+        
+        if len(ev_per_hour_values) < 3:
+            continue
+        
+        # Calculate mean and standard deviation
+        mean_ev_per_hour = sum(ev_per_hour_values) / len(ev_per_hour_values)
+        variance = sum((x - mean_ev_per_hour) ** 2 for x in ev_per_hour_values) / len(ev_per_hour_values)
+        std_dev = variance ** 0.5
+        
+        # Identify outliers (more than 2 standard deviations from mean)
+        for metric in metrics:
+            if metric['ev_per_hour'] == 0:
+                continue
+            
+            deviation = abs(metric['ev_per_hour'] - mean_ev_per_hour)
+            z_score = deviation / std_dev if std_dev > 0 else 0
+            
+            # Flag as outlier if z-score > 2 (significantly different)
+            if z_score > 2:
+                issue = metric['issue']
+                outliers.append({
+                    'issue_id': issue.get('id'),
+                    'subject': issue.get('subject'),
+                    'tracker': tracker_name,
+                    'assigned_to': issue.get('assigned_to', {}).get('name', 'Unassigned'),
+                    'project': issue.get('project', {}).get('name'),
+                    'status': issue.get('status', {}).get('name'),
+                    'hours': metric['hours'],
+                    'ev': metric['ev'],
+                    'pv': metric['pv'],
+                    'ev_per_hour': round(metric['ev_per_hour'], 2),
+                    'cpi': round(metric['cpi'], 2),
+                    'group_mean_ev_per_hour': round(mean_ev_per_hour, 2),
+                    'deviation_from_mean': round(deviation, 2),
+                    'z_score': round(z_score, 2),
+                    'performance_type': 'high' if metric['ev_per_hour'] > mean_ev_per_hour else 'low'
+                })
+    
+    # Sort by z-score (highest deviation first)
+    if outliers:
+        outliers.sort(key=lambda x: x['z_score'], reverse=True)
+        return outliers
+    
+    return None
